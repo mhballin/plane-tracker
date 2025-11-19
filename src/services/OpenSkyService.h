@@ -1,0 +1,30 @@
+// src/services/OpenSkyService.h
+
+#pragma once
+#include <Arduino.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include "../models/Aircraft.h"
+#include "../config/Config.h"
+
+class OpenSkyService {
+private:
+    String accessToken;
+    unsigned long tokenExpiryTime;
+    
+    // OAuth2 token management
+    bool fetchAccessToken();
+    
+    // Quick aircraft identification (no slow API calls!)
+    String guessAircraftType(const String& callsign);
+    String guessAirline(const String& callsign);
+
+public:
+    OpenSkyService();
+    
+    // Initialize service and get OAuth token
+    bool initialize();
+    
+    // Fetch aircraft in range (FAST - no metadata lookups!)
+    int fetchAircraft(Aircraft* aircraftList, int maxAircraft);
+};

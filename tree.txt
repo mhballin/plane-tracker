@@ -1,0 +1,34 @@
+.
+├── include
+│   └── README
+├── lib
+│   └── README
+├── logs
+│   ├── device-monitor-251007-092716.log
+│   ├── device-monitor-251007-094058.log
+│   ├── device-monitor-251007-094408.log
+│   ├── device-monitor-251007-095342.log
+│   ├── device-monitor-251007-095407.log
+│   ├── device-monitor-251007-095734.log
+│   └── device-monitor-251007-114810.log
+├── plane-tracker.code-workspace
+├── platformio.ini
+├── src
+│   ├── config
+│   │   └── Config.h
+│   ├── DisplayManager.cpp
+│   ├── DisplayManager.h
+│   ├── main.cpp
+│   ├── models
+│   │   ├── Aircraft.h
+│   │   └── WeatherData.h
+│   └── services
+│       ├── OpenSkyService.cpp
+│       ├── OpenSkyService.h
+│       ├── WeatherService.cpp
+│       └── WeatherService.h
+├── test
+│   └── README
+└── tree.txt
+
+9 directories, 23 files
