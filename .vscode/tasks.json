@@ -4,7 +4,7 @@
     {
       "label": "PlatformIO: Build",
       "type": "shell",
-      "command": "pio run",
+      "command": "pio run -e full",
       "group": {
         "kind": "build",
         "isDefault": true
@@ -20,7 +20,7 @@
     {
       "label": "PlatformIO: Upload",
       "type": "shell",
-      "command": "pio run -t upload",
+      "command": "pio run -e full -t upload",
       "group": {
         "kind": "build",
         "isDefault": false

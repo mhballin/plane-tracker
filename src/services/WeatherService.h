@@ -14,11 +14,14 @@ class WeatherService {
 public:
     WeatherService(const String& apiKey, const String& city);
     bool getWeather(WeatherData& weather);
+    const String& getLastError() const { return lastError; }
 
 private:
     String apiKey;
     String city;
+    String lastError;
     String buildUrl() const;
-    String makeHttpRequest(const String& url);
+    bool makeHttpRequestWithRetry(const String& url, String& response);
+    bool makeHttpRequest(const String& url, String& response, int& httpCode);
     bool parseWeatherData(const String& jsonData, WeatherData& weather);
 };

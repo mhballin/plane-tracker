@@ -8,7 +8,7 @@
 #include "models/Aircraft.h"
 #include "models/WeatherData.h"
 
-// Color definitions
+// Color definitions - Refined dark theme for better readability
 #define TFT_BLACK   0x0000
 #define TFT_WHITE   0xFFFF
 #define TFT_RED     0xF800
@@ -18,13 +18,22 @@
 #define TFT_CYAN    0x07FF
 #define TFT_MAGENTA 0xF81F
 
-#define COLOR_BACKGROUND 0x1084  // Deep slate to reduce glare
-#define COLOR_PANEL 0x2965       // Smoked blue-gray card background
-#define COLOR_TEXT 0xF7BE        // Warm off-white for primary text
-#define COLOR_SUBTEXT 0x9CF3     // Muted desaturated label color
-#define COLOR_ACCENT 0x067F      // Brighter teal accent for key lines/icons
-#define COLOR_WARNING 0xF4A5     // Warm amber for alerts
-#define COLOR_ALERT 0xE2C0
+// Enhanced dark theme
+#define COLOR_BACKGROUND 0x0821  // Deeper charcoal (less blue tint)
+#define COLOR_PANEL 0x2124       // Elevated surface (subtle contrast)
+#define COLOR_TEXT 0xFFFF        // Pure white for primary text (max contrast)
+#define COLOR_TEXT_DIM 0xBDF7    // Dimmed white for secondary text  
+#define COLOR_SUBTEXT 0x8410     // Muted gray for labels
+#define COLOR_ACCENT 0x04FF      // Vibrant cyan for interactive elements
+#define COLOR_WARNING 0xFD20     // Warm orange for warnings
+#define COLOR_SUCCESS 0x07E0     // Green for positive states
+#define COLOR_DIVIDER 0x4208     // Subtle divider lines
+
+// Layout constants for consistency
+#define MARGIN_SMALL 8
+#define MARGIN_MEDIUM 16
+#define MARGIN_LARGE 24
+#define STATUS_BAR_HEIGHT 36
 
 // Official LovyanGFX config for Elecrow ESP32 5" HMI Display (WZ8048C050)
 // Based on: https://github.com/lovyan03/LovyanGFX/blob/master/src/lgfx_user/LGFX_Elecrow_ESP32_Display_WZ8048C050.h

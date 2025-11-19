@@ -1,121 +1,251 @@
-// This smoke-test file is compiled only when SMOKE_TEST is defined.
-// To enable: add `-DSMOKE_TEST` to build flags or define in PlatformIO build env.
+// Touch Diagnostics Harness - compiled when SMOKE_TEST is defined
+// Visualizes touch input, detects gestures, and reports detailed metrics
+// Build: pio run -e smoke-test -t upload && pio device monitor -b 115200
 #ifdef SMOKE_TEST
 #include <Arduino.h>
 #include "DisplayManager.h"
-#include <esp_heap_caps.h>
+#include "config/Config.h"
 
 DisplayManager* dm;
+LGFX* lcd;
+
+// Touch trail visualization
+#define MAX_TRAIL_POINTS 100
+struct TrailPoint {
+    int x, y;
+    unsigned long timestamp;
+};
+TrailPoint trail[MAX_TRAIL_POINTS];
+int trailIndex = 0;
+int trailCount = 0;
+
+// Touch state tracking
+bool touchActive = false;
+int touchStartX = 0, touchStartY = 0;
+int touchLastX = 0, touchLastY = 0;
+unsigned long touchStartTime = 0;
+int gestureCount = 0;
+
+void drawUI() {
+    // Header
+    lcd->fillRect(0, 0, 800, 50, TFT_NAVY);
+    lcd->setTextColor(TFT_WHITE);
+    lcd->setTextSize(2);
+    lcd->setCursor(10, 15);
+    lcd->print("TOUCH DIAGNOSTICS HARNESS");
+    
+    // Instructions
+    lcd->fillRect(0, 430, 800, 50, TFT_DARKGREY);
+    lcd->setTextSize(1);
+    lcd->setTextColor(TFT_YELLOW);
+    lcd->setCursor(10, 435);
+    lcd->print("Swipe to test gestures | Touch coordinates and metrics displayed in serial monitor");
+    lcd->setCursor(10, 450);
+    lcd->printf("Gestures detected: %d | Current thresholds: dist=%dpx vel=%dpx/s", 
+                gestureCount, Config::GESTURE_SWIPE_THRESHOLD, Config::GESTURE_SWIPE_VELOCITY_MIN);
+}
+
+void clearTrail() {
+    trailCount = 0;
+    trailIndex = 0;
+}
+
+void addTrailPoint(int x, int y) {
+    trail[trailIndex].x = x;
+    trail[trailIndex].y = y;
+    trail[trailIndex].timestamp = millis();
+    trailIndex = (trailIndex + 1) % MAX_TRAIL_POINTS;
+    if (trailCount < MAX_TRAIL_POINTS) trailCount++;
+}
+
+void drawTrail() {
+    // Draw fade-out trail
+    for (int i = 0; i < trailCount; i++) {
+        int idx = (trailIndex - trailCount + i + MAX_TRAIL_POINTS) % MAX_TRAIL_POINTS;
+        unsigned long age = millis() - trail[idx].timestamp;
+        
+        if (age > 2000) continue; // Skip old points
+        
+        // Fade color based on age (0=bright, 2000ms=dim)
+        uint8_t brightness = 255 - (age * 255 / 2000);
+        uint16_t color = lcd->color565(brightness, brightness / 2, brightness);
+        
+        lcd->fillCircle(trail[idx].x, trail[idx].y, 3, color);
+    }
+}
+
+void analyzeGesture(int startX, int startY, int endX, int endY, unsigned long duration) {
+    int deltaX = endX - startX;
+    int deltaY = endY - startY;
+    int absX = abs(deltaX);
+    int absY = abs(deltaY);
+    
+    float distance = sqrt(deltaX * deltaX + deltaY * deltaY);
+    float velocityX = (absX * 1000.0f) / (duration + 1);
+    float velocityY = (absY * 1000.0f) / (duration + 1);
+    float velocity = (distance * 1000.0f) / (duration + 1);
+    
+    Serial.println("\n========== GESTURE ANALYSIS ==========");
+    Serial.printf("Start: (%d, %d) → End: (%d, %d)\n", startX, startY, endX, endY);
+    Serial.printf("Delta: X=%d Y=%d\n", deltaX, deltaY);
+    Serial.printf("Distance: %.1f px\n", distance);
+    Serial.printf("Duration: %lu ms\n", duration);
+    Serial.printf("Velocity: %.1f px/s (X: %.1f, Y: %.1f)\n", velocity, velocityX, velocityY);
+    
+    // Determine dominant axis
+    const float AXIS_DOMINANCE = 1.5f;
+    String direction = "DIAGONAL/AMBIGUOUS";
+    bool isSwipe = false;
+    
+    if (absX >= absY * AXIS_DOMINANCE) {
+        direction = deltaX > 0 ? "RIGHT (horizontal)" : "LEFT (horizontal)";
+        if (velocityX >= Config::GESTURE_SWIPE_VELOCITY_MIN && 
+            absX >= Config::GESTURE_SWIPE_THRESHOLD &&
+            duration <= Config::GESTURE_MAX_TIME_MS) {
+            isSwipe = true;
+        }
+    } else if (absY >= absX * AXIS_DOMINANCE) {
+        direction = deltaY > 0 ? "DOWN (vertical)" : "UP (vertical)";
+        if (velocityY >= Config::GESTURE_SWIPE_VELOCITY_MIN && 
+            absY >= Config::GESTURE_SWIPE_THRESHOLD &&
+            duration <= Config::GESTURE_MAX_TIME_MS) {
+            isSwipe = true;
+        }
+    }
+    
+    Serial.printf("Direction: %s\n", direction.c_str());
+    Serial.printf("Axis dominance: X/Y ratio = %.2f\n", (float)absX / (absY + 1));
+    
+    // Check against thresholds
+    Serial.println("\n--- Threshold Checks ---");
+    Serial.printf("Distance threshold (%d px): %s (%s by %.1f px)\n", 
+                  Config::GESTURE_SWIPE_THRESHOLD,
+                  distance >= Config::GESTURE_SWIPE_THRESHOLD ? "PASS" : "FAIL",
+                  distance >= Config::GESTURE_SWIPE_THRESHOLD ? "exceeded" : "short",
+                  abs(distance - Config::GESTURE_SWIPE_THRESHOLD));
+    Serial.printf("Velocity threshold (%d px/s): %s (%.1f px/s)\n",
+                  Config::GESTURE_SWIPE_VELOCITY_MIN,
+                  velocity >= Config::GESTURE_SWIPE_VELOCITY_MIN ? "PASS" : "FAIL",
+                  velocity);
+    Serial.printf("Duration threshold (%d ms): %s (%lu ms)\n",
+                  Config::GESTURE_MAX_TIME_MS,
+                  duration <= Config::GESTURE_MAX_TIME_MS ? "PASS" : "FAIL",
+                  duration);
+    Serial.printf("Axis dominance (1.5x): %s\n",
+                  direction.indexOf("DIAGONAL") < 0 ? "PASS" : "FAIL");
+    
+    Serial.printf("\n>>> RESULT: %s <<<\n", isSwipe ? "SWIPE DETECTED" : "NOT A SWIPE");
+    if (isSwipe) {
+        gestureCount++;
+        Serial.printf("Total gestures detected: %d\n", gestureCount);
+    }
+    Serial.println("======================================\n");
+}
 
 void setup() {
-  Serial.begin(115200);
-  // Give the serial monitor a bit more time and print heartbeats so we can
-  // observe early boot logs before attempting any display allocation.
-  for (int i = 0; i < 5; ++i) {
-    delay(500);
-    Serial.print("boot stage "); Serial.println(i + 1);
-  }
-  Serial.println("Display smoke test starting... (delayed)");
-
-  // Wait a moment so you can attach the serial monitor
-  delay(2000);
-
-  // --- PSRAM / DMA quick health check ---
-  Serial.println("=== PSRAM test ===");
-  size_t free_spiram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-  size_t free_dma = heap_caps_get_free_size(MALLOC_CAP_DMA);
-  size_t free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-  Serial.printf("free_spiram=%u free_dma=%u free_internal=%u\n", (unsigned)free_spiram, (unsigned)free_dma, (unsigned)free_internal);
-
-  size_t try_size = 1024 * 1024; // 1MB
-  void* p = heap_caps_malloc(try_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  Serial.printf("alloc %u bytes from SPIRAM -> %p\n", (unsigned)try_size, p);
-  if (p) {
-    memset(p, 0xA5, try_size);
-    heap_caps_free(p);
-  }
-  Serial.println("PSRAM test done.");
-
-  dm = new DisplayManager();
-  if (!dm) {
-    Serial.println("Failed to allocate DisplayManager");
-    while (1) delay(1000);
-  }
-  if (!dm->initialize()) {
-    Serial.println("Display initialize failed");
-    while (1) delay(1000);
-  }
-  Serial.println("Display initialized ok!");
-  
-  // Now let's draw something to confirm everything works!
-  auto lcd = dm->getDisplay();
-  // Rotation is set in DisplayManager::initialize()
-  lcd->fillScreen(TFT_BLACK);
-  lcd->setTextColor(TFT_WHITE);
-  lcd->setTextSize(3);
-  lcd->setCursor(50, 50);
-  lcd->println("SUCCESS!");
-  lcd->setTextSize(2);
-  lcd->setCursor(50, 100);
-  lcd->println("LovyanGFX 1.1.16 works!");
-  lcd->setCursor(50, 140);
-  lcd->println("Elecrow 5\" HMI Display");
-  
-  // Draw some shapes
-  lcd->drawRect(50, 200, 700, 200, TFT_GREEN);
-  lcd->fillCircle(400, 300, 50, TFT_RED);
-  lcd->drawLine(100, 450, 700, 450, TFT_CYAN);
-  
-  Serial.println("Drawing complete!");
+    Serial.begin(115200);
+    delay(1000);
+    
+    Serial.println("\n\n=== TOUCH DIAGNOSTICS HARNESS ===");
+    Serial.println("[BOOT] Initializing display and touch...\n");
+    
+    dm = new DisplayManager();
+    if (!dm || !dm->initialize()) {
+        Serial.println("[ERROR] Display initialization failed");
+        while (1) delay(1000);
+    }
+    
+    lcd = dm->getDisplay();
+    if (!lcd) {
+        Serial.println("[ERROR] Could not get LCD instance");
+        while (1) delay(1000);
+    }
+    
+    Serial.println("[INIT] ✅ Display and touch ready");
+    Serial.printf("[INIT] Screen size: %dx%d\n", lcd->width(), lcd->height());
+    Serial.printf("[CONFIG] Swipe threshold: %d px\n", Config::GESTURE_SWIPE_THRESHOLD);
+    Serial.printf("[CONFIG] Velocity min: %d px/s\n", Config::GESTURE_SWIPE_VELOCITY_MIN);
+    Serial.printf("[CONFIG] Max duration: %d ms\n", Config::GESTURE_MAX_TIME_MS);
+    Serial.printf("[CONFIG] Debounce: %d ms\n\n", Config::GESTURE_DEBOUNCE_MS);
+    
+    // Initial UI
+    lcd->fillScreen(TFT_BLACK);
+    drawUI();
+    
+    Serial.println("=== READY FOR TOUCH INPUT ===");
+    Serial.println("Touch the screen to see coordinates and gesture analysis\n");
 }
 
 void loop() {
-  // Multi-combo test: iterate pclk polarity and write frequency and show RED/GREEN/BLUE
-  auto lcd = dm->getDisplay();
-  if (!lcd) {
-    delay(1000);
-    return;
-  }
-
-  // Access LGFX internals (LGFX class defined in DisplayManager.h)
-  LGFX* lg = (LGFX*)lcd;
-  auto& bus = lg->_bus_instance;
-  auto& panel = lg->_panel_instance;
-
-  const uint32_t freqs[] = {10000000u, 12000000u, 15000000u};
-  const int pclk_vals[] = {0, 1};
-  const uint16_t colors[] = {TFT_RED, TFT_GREEN, TFT_BLUE};
-  const char* colorNames[] = {"RED", "GREEN", "BLUE"};
-
-  for (size_t pi = 0; pi < sizeof(pclk_vals)/sizeof(pclk_vals[0]); ++pi) {
-    for (size_t fi = 0; fi < sizeof(freqs)/sizeof(freqs[0]); ++fi) {
-      int pclk = pclk_vals[pi];
-      uint32_t freq = freqs[fi];
-
-      // Reconfigure bus
-      auto cfg = bus.config();
-      cfg.freq_write = freq;
-      cfg.pclk_active_neg = pclk;
-      bus.config(cfg);
-
-      Serial.printf("--- TEST COMBO: pclk=%d freq=%u ---\n", pclk, freq);
-
-      // Allow some time for the bus to settle
-      delay(200);
-
-      // Re-init the lcd device to ensure the new timing is applied cleanly
-      lcd->init();
-
-      for (size_t ci = 0; ci < 3; ++ci) {
-        lcd->fillScreen(colors[ci]);
-        Serial.printf("Showing %s (pclk=%d freq=%u)\n", colorNames[ci], pclk, freq);
-        delay(1500);
-      }
+    int touchX = 0, touchY = 0;
+    bool haveTouch = lcd->getTouch(&touchX, &touchY);
+    
+    if (haveTouch && touchX > 0 && touchY > 0) {
+        // Serial output for raw coordinates
+        Serial.printf("RAW: %d, %d\n", touchX, touchY);
+        
+        if (!touchActive) {
+            // Touch started
+            touchActive = true;
+            touchStartX = touchX;
+            touchStartY = touchY;
+            touchStartTime = millis();
+            clearTrail();
+            
+            Serial.printf("\n[TOUCH START] (%d, %d) at %lu ms\n", touchX, touchY, touchStartTime);
+            
+            // Clear work area for new gesture
+            lcd->fillRect(0, 50, 800, 380, TFT_BLACK);
+            
+            // Draw crosshair at start
+            lcd->drawLine(touchX - 10, touchY, touchX + 10, touchY, TFT_GREEN);
+            lcd->drawLine(touchX, touchY - 10, touchX, touchY + 10, TFT_GREEN);
+        }
+        
+        touchLastX = touchX;
+        touchLastY = touchY;
+        addTrailPoint(touchX, touchY);
+        
+        // Redraw work area
+        lcd->fillRect(0, 50, 800, 380, TFT_BLACK);
+        drawTrail();
+        
+        // Draw current position
+        lcd->fillCircle(touchX, touchY, 5, TFT_RED);
+        
+        // Draw line from start to current
+        lcd->drawLine(touchStartX, touchStartY, touchX, touchY, TFT_CYAN);
+        
+        // Show live metrics
+        int deltaX = touchX - touchStartX;
+        int deltaY = touchY - touchStartY;
+        float dist = sqrt(deltaX * deltaX + deltaY * deltaY);
+        unsigned long dur = millis() - touchStartTime;
+        
+        lcd->setTextSize(1);
+        lcd->setTextColor(TFT_WHITE);
+        lcd->setCursor(10, 60);
+        lcd->printf("Live: dist=%.0fpx dx=%d dy=%d dur=%lums", dist, deltaX, deltaY, dur);
+        
+    } else if (touchActive) {
+        // Touch ended
+        touchActive = false;
+        unsigned long duration = millis() - touchStartTime;
+        
+        Serial.printf("[TOUCH END] (%d, %d) at %lu ms (duration: %lu ms)\n", 
+                     touchLastX, touchLastY, millis(), duration);
+        
+        // Analyze the gesture
+        analyzeGesture(touchStartX, touchStartY, touchLastX, touchLastY, duration);
+        
+        // Draw end crosshair
+        lcd->drawLine(touchLastX - 10, touchLastY, touchLastX + 10, touchLastY, TFT_RED);
+        lcd->drawLine(touchLastX, touchLastY - 10, touchLastX, touchLastY + 10, TFT_RED);
+        
+        // Update gesture counter in UI
+        drawUI();
     }
-  }
-
-  Serial.println("Multi-combo smoke test complete. Halting further tests.");
-  // Halt here - keep last color on screen
-  while (1) delay(1000);
+    
+    delay(10); // Small delay for stability
 }
 #endif // SMOKE_TEST

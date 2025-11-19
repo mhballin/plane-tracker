@@ -225,7 +225,7 @@ void DisplayManager::drawCard(int x, int y, int w, int h, const char* title) {
 // Draw divider line
 void DisplayManager::drawDivider(int y) {
     if (!lcd) return;
-    lcd->drawLine(10, y, lcd->width() - 10, y, COLOR_ACCENT);
+    lcd->drawLine(MARGIN_MEDIUM, y, lcd->width() - MARGIN_MEDIUM, y, COLOR_DIVIDER);
 }
 
 // Draw status bar
@@ -233,14 +233,16 @@ void DisplayManager::drawStatusBar() {
     if (!lcd) return;
     
     // Status bar at bottom
-    int barY = lcd->height() - 30;
-    lcd->fillRect(0, barY, lcd->width(), 30, COLOR_PANEL);
+    int barY = lcd->height() - STATUS_BAR_HEIGHT;
+    lcd->fillRect(0, barY, lcd->width(), STATUS_BAR_HEIGHT, COLOR_PANEL);
+    lcd->drawLine(0, barY, lcd->width(), barY, COLOR_DIVIDER);
     
-    lcd->setTextColor(COLOR_SUBTEXT);
+    lcd->setTextColor(COLOR_TEXT_DIM);
     lcd->setTextSize(1);
-    lcd->setCursor(10, barY + 10);
     
-    if (m_statusMsg.length() > 0) {
+    // Left side: Status message or time
+    if (m_statusMsg.length() > 0 && (millis() - m_statusSetAt < Config::UI_STATUS_MS)) {
+        lcd->setCursor(MARGIN_MEDIUM, barY + 14);
         lcd->print(m_statusMsg);
     } else {
         struct tm timeinfo;
@@ -248,9 +250,17 @@ void DisplayManager::drawStatusBar() {
             char timeStr[32];
             snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", 
                      timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+            lcd->setCursor(MARGIN_MEDIUM, barY + 14);
             lcd->print(timeStr);
         }
     }
+    
+    // Right side: Brightness indicator
+    lcd->setCursor(lcd->width() - 90, barY + 14);
+    lcd->setTextColor(COLOR_SUBTEXT);
+    lcd->print("Bright:");
+    lcd->setTextColor(COLOR_TEXT_DIM);
+    lcd->printf(" %d%%", (currentBrightness * 100) / 255);
 }
 
 // Draw metric card
@@ -831,8 +841,6 @@ bool DisplayManager::detectSwipe(int& deltaX, int& deltaY) {
     }
 
     return false; // diagonal or ambiguous
-    
-    return true;
 }
 
 void DisplayManager::handleSwipeLeft() {

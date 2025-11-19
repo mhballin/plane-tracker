@@ -22,8 +22,8 @@ pio --version
 2) Build, upload, monitor (from project root):
 
 ```bash
-pio run
-pio run -t upload
+pio run -e full
+pio run -e full -t upload
 pio device monitor -b 115200
 ```
 
@@ -33,6 +33,13 @@ Open the Command Palette (Cmd+Shift+P) -> Tasks: Run Task -> choose one of:
 - PlatformIO: Build
 - PlatformIO: Upload
 - PlatformIO: Monitor
+
+Environments
+------------
+- `full` (default): entire application stack (Wi-Fi + OpenSky + weather).
+- `smoke-test`: adds `-DSMOKE_TEST` so you can tune display/touch without hitting the network. Run with `pio run -e smoke-test -t upload` when iterating on UI only.
+
+See `docs/rapid-iteration.md` for more tips on speeding up the edit→flash loop.
 
 If VS Code can't find `pio`, make sure you restarted VS Code after installing PlatformIO or add the install location (`~/.local/bin` or `~/.local/pipx/bin`) to your PATH in `~/.zshrc`.
 

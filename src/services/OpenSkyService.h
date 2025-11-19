@@ -11,6 +11,7 @@ class OpenSkyService {
 private:
     String accessToken;
     unsigned long tokenExpiryTime;
+    String lastError;
     
     // OAuth2 token management
     bool fetchAccessToken();
@@ -27,4 +28,6 @@ public:
     
     // Fetch aircraft in range (FAST - no metadata lookups!)
     int fetchAircraft(Aircraft* aircraftList, int maxAircraft);
+
+    const String& getLastError() const { return lastError; }
 };

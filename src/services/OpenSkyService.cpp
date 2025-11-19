@@ -4,7 +4,13 @@
 #include "OpenSkyService.h"
 using namespace Config;
 
-OpenSkyService::OpenSkyService() : tokenExpiryTime(0) {}
+namespace {
+    constexpr uint8_t MAX_HTTP_ATTEMPTS = 3;
+    constexpr uint16_t RETRY_DELAY_MS = 500; // base delay between retries (ms)
+    constexpr uint16_t HTTP_TIMEOUT_MS = 12000;
+}
+
+OpenSkyService::OpenSkyService() : tokenExpiryTime(0), lastError("") {}
 
 // ========================================
 // OAuth2 Token Authentication
@@ -16,45 +22,57 @@ bool OpenSkyService::initialize() {
 
 bool OpenSkyService::fetchAccessToken() {
     if (WiFi.status() != WL_CONNECTED) {
+        lastError = "OpenSky auth failed (WiFi disconnected)";
         Serial.println("[OpenSky] No WiFi connection");
         return false;
     }
 
-    HTTPClient http;
-    http.begin(OPENSKY_TOKEN_ENDPOINT);
-    http.setTimeout(10000);  // 10 second timeout
-    
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-    
-    // Build OAuth2 request
-    char postData[512];
-    snprintf(postData, sizeof(postData), 
-             "grant_type=client_credentials&client_id=%s&client_secret=%s",
-             OPENSKY_CLIENT_ID, OPENSKY_CLIENT_SECRET);
-    
-    int httpCode = http.POST(postData);
-    bool success = false;
-    
-    if (httpCode == 200) {
-        String payload = http.getString();
-        
-        JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, payload);
-        
-        if (!error && doc["access_token"]) {
-            accessToken = doc["access_token"].as<String>();
-            tokenExpiryTime = millis() + TOKEN_LIFETIME;
-            Serial.println("[OpenSky] ✅ Authenticated successfully");
-            success = true;
+    for (uint8_t attempt = 1; attempt <= MAX_HTTP_ATTEMPTS; ++attempt) {
+        HTTPClient http;
+        http.begin(OPENSKY_TOKEN_ENDPOINT);
+        http.setTimeout(HTTP_TIMEOUT_MS);
+        http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+        char postData[512];
+        snprintf(postData, sizeof(postData),
+                 "grant_type=client_credentials&client_id=%s&client_secret=%s",
+                 OPENSKY_CLIENT_ID, OPENSKY_CLIENT_SECRET);
+
+        int httpCode = http.POST(postData);
+        bool success = false;
+
+        if (httpCode == 200) {
+            String payload = http.getString();
+            JsonDocument doc;
+            DeserializationError error = deserializeJson(doc, payload);
+
+            if (!error && doc["access_token"]) {
+                accessToken = doc["access_token"].as<String>();
+                tokenExpiryTime = millis() + TOKEN_LIFETIME;
+                lastError = "";
+                Serial.println("[OpenSky] ✅ Authenticated successfully");
+                success = true;
+            } else {
+                lastError = "OpenSky auth response parse error";
+                Serial.println("[OpenSky] ❌ Failed to parse token response");
+            }
         } else {
-            Serial.println("[OpenSky] ❌ Failed to parse token response");
+            lastError = String("OpenSky auth HTTP ") + httpCode;
+            Serial.printf("[OpenSky] ❌ HTTP %d: %s\n", httpCode, http.getString().c_str());
         }
-    } else {
-        Serial.printf("[OpenSky] ❌ HTTP %d: %s\n", httpCode, http.getString().c_str());
+
+        http.end();
+
+        if (success) {
+            return true;
+        }
+
+        if (attempt < MAX_HTTP_ATTEMPTS) {
+            delay(RETRY_DELAY_MS * attempt);
+        }
     }
-    
-    http.end();
-    return success;
+
+    return false;
 }
 
 // ========================================
@@ -65,6 +83,7 @@ int OpenSkyService::fetchAircraft(Aircraft* aircraftList, int maxAircraft) {
     const unsigned long API_RATE_LIMIT = 5000;  // 5 seconds between calls
     
     if (WiFi.status() != WL_CONNECTED) {
+        lastError = "OpenSky unavailable (WiFi disconnected)";
         Serial.println("[OpenSky] No WiFi connection");
         return 0;
     }
@@ -85,93 +104,91 @@ int OpenSkyService::fetchAircraft(Aircraft* aircraftList, int maxAircraft) {
     lastApiCall = millis();
 
     // Build URL with bounding box
-    HTTPClient http;
     String url = "https://opensky-network.org/api/states/all";
     url += "?lamin=" + String(HOME_LAT - VISIBILITY_RANGE, 4);
     url += "&lomin=" + String(HOME_LON - VISIBILITY_RANGE, 4);
     url += "&lamax=" + String(HOME_LAT + VISIBILITY_RANGE, 4);
     url += "&lomax=" + String(HOME_LON + VISIBILITY_RANGE, 4);
-    
-    http.begin(url);
-    http.setTimeout(15000);
-    
-    // Add auth header if we have token
-    if (!accessToken.isEmpty()) {
-        http.addHeader("Authorization", "Bearer " + accessToken);
-    }
-    
-    Serial.println("[OpenSky] Fetching aircraft...");
-    int httpCode = http.GET();
+
     int aircraftCount = 0;
-    
-    if (httpCode == 200) {
-        String payload = http.getString();
-        
-        // Use larger JSON document for aircraft data
-        JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, payload);
-        
-        if (!error) {
-            JsonArray states = doc["states"];
-            
-            if (!states.isNull()) {
-                for (JsonArray state : states) {
-                    if (aircraftCount >= maxAircraft) break;
-                    
-                    // Check for required fields
-                    if (state[6].isNull() || state[5].isNull()) continue;
-                    
-                    Aircraft &plane = aircraftList[aircraftCount];
-                    
-                    // Basic identification
-                    plane.icao24 = state[0].as<String>();
-                    plane.callsign = state[1].as<String>();
-                    plane.callsign.trim();
-                    
-                    // Position
-                    plane.longitude = state[5].as<float>();
-                    plane.latitude = state[6].as<float>();
-                    plane.altitude = state[7].isNull() ? 0 : state[7].as<float>();
-                    
-                    // Status
-                    plane.onGround = state[8].as<bool>();
-                    
-                    // Skip planes on ground
-                    if (plane.onGround) continue;
-                    
-                    // Movement
-                    plane.velocity = state[9].isNull() ? 0 : state[9].as<float>();
-                    plane.heading = state[10].isNull() ? 0 : state[10].as<float>();
-                    
-                    // Mark as valid
-                    plane.valid = true;
-                    
-                    // Set default values for fields we're not fetching
-                    // (Metadata lookups are SLOW - removed for speed!)
-                    plane.aircraftType = guessAircraftType(plane.callsign);
-                    plane.airline = guessAirline(plane.callsign);
-                    
-                    // Skip private aircraft
-                    if (plane.airline == "Private") continue;
-                    
-                    plane.origin = "N/A";
-                    plane.destination = "N/A";
-                    
-                    aircraftCount++;
-                }
-                
-                Serial.printf("[OpenSky] ✅ Found %d aircraft\n", aircraftCount);
-            } else {
-                Serial.println("[OpenSky] No aircraft in response");
-            }
-        } else {
-            Serial.printf("[OpenSky] JSON parse error: %s\n", error.c_str());
+
+    for (uint8_t attempt = 1; attempt <= MAX_HTTP_ATTEMPTS; ++attempt) {
+        HTTPClient http;
+        http.begin(url);
+        http.setTimeout(HTTP_TIMEOUT_MS);
+
+        if (!accessToken.isEmpty()) {
+            http.addHeader("Authorization", "Bearer " + accessToken);
         }
-    } else {
-        Serial.printf("[OpenSky] ❌ HTTP %d\n", httpCode);
+
+        Serial.println("[OpenSky] Fetching aircraft...");
+        int httpCode = http.GET();
+
+        if (httpCode == 200) {
+            String payload = http.getString();
+            http.end();
+
+            JsonDocument doc;
+            DeserializationError error = deserializeJson(doc, payload);
+
+            if (!error) {
+                JsonArray states = doc["states"];
+                if (!states.isNull()) {
+                    for (JsonArray state : states) {
+                        if (aircraftCount >= maxAircraft) break;
+                        if (state[6].isNull() || state[5].isNull()) continue;
+
+                        Aircraft &plane = aircraftList[aircraftCount];
+                        plane.icao24 = state[0].as<String>();
+                        plane.callsign = state[1].as<String>();
+                        plane.callsign.trim();
+                        plane.longitude = state[5].as<float>();
+                        plane.latitude = state[6].as<float>();
+                        plane.altitude = state[7].isNull() ? 0 : state[7].as<float>();
+                        plane.onGround = state[8].as<bool>();
+                        if (plane.onGround) continue;
+
+                        plane.velocity = state[9].isNull() ? 0 : state[9].as<float>();
+                        plane.heading = state[10].isNull() ? 0 : state[10].as<float>();
+                        plane.valid = true;
+                        plane.aircraftType = guessAircraftType(plane.callsign);
+                        plane.airline = guessAirline(plane.callsign);
+                        if (plane.airline == "Private") continue;
+
+                        plane.origin = "N/A";
+                        plane.destination = "N/A";
+                        aircraftCount++;
+                    }
+
+                    if (aircraftCount == 0) {
+                        lastError = "No aircraft in range";
+                        Serial.println("[OpenSky] No aircraft detected in response");
+                    } else {
+                        lastError = "";
+                        Serial.printf("[OpenSky] ✅ Found %d aircraft\n", aircraftCount);
+                    }
+                } else {
+                    lastError = "OpenSky response missing states";
+                    Serial.println("[OpenSky] No aircraft in response");
+                }
+            } else {
+                lastError = "OpenSky JSON parse error";
+                Serial.printf("[OpenSky] JSON parse error: %s\n", error.c_str());
+            }
+
+            return aircraftCount;
+        } else {
+            lastError = String("OpenSky HTTP ") + httpCode;
+            Serial.printf("[OpenSky] ❌ HTTP %d\n", httpCode);
+        }
+
+        http.end();
+
+        if (attempt < MAX_HTTP_ATTEMPTS) {
+            delay(RETRY_DELAY_MS * attempt);
+        }
     }
-    
-    http.end();
+
     return aircraftCount;
 }
 

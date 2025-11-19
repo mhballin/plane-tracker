@@ -269,7 +269,11 @@ void updateWeather() {
         }
     } else {
         Serial.println("[Weather] ❌ Failed to fetch weather");
-        if (display) display->setStatusMessage("Weather fetch failed");
+        if (display) {
+            String err = weatherService ? weatherService->getLastError() : String("Weather service offline");
+            if (err.isEmpty()) err = "Weather fetch failed";
+            display->setStatusMessage(err);
+        }
     }
 }
 
@@ -313,7 +317,11 @@ void updateAircraft() {
     } else {
         Serial.println("[Aircraft] No aircraft detected");
         currentAircraftIndex = 0;
-        if (display) display->setStatusMessage("No aircraft");
+        if (display) {
+            String err = openSkyService->getLastError();
+            if (err.isEmpty()) err = "No aircraft";
+            display->setStatusMessage(err);
+        }
     }
 }
 
