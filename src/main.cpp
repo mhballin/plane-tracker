@@ -123,6 +123,8 @@ void setup() {
 
 void loop() {
     unsigned long now = millis();
+    // Track last screen change we have already redrawn for immediate screen transitions
+    static unsigned long lastRedrawnScreenChange = 0;
     // Serial command parser: type 'CAL' + Enter in Serial Monitor to run touch calibration on demand
     static String _serialBuf = "";
     static bool _rawTouchMode = false;
@@ -175,6 +177,16 @@ void loop() {
     // Process touch gestures continuously for responsive UI
     if (display) {
         display->processTouch();
+    }
+
+    // If a screen change occurred since last redraw, force an immediate display update
+    if (display) {
+        unsigned long sc = display->getLastScreenChangeTime();
+        if (sc != 0 && sc != lastRedrawnScreenChange) {
+            updateDisplay();
+            lastRedrawnScreenChange = sc;
+            Serial.println("[DISPLAY] Immediate redraw after screen change");
+        }
     }
     
     // Check if we should auto-return to home screen

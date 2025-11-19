@@ -255,6 +255,8 @@ public:
     
     // Gesture processing - call this frequently from main loop
     void processTouch();
+    // Expose last screen change timestamp for immediate redraw logic
+    unsigned long getLastScreenChangeTime() const { return lastScreenChange; }
     
     // Status bar / last update time
     void setStatusMessage(const String& msg);

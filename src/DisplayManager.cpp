@@ -152,10 +152,16 @@ void DisplayManager::showError(const char* title, const char* message) {
 // ========================================
 void DisplayManager::setScreen(ScreenState screen) {
     if (currentScreen != screen) {
+        ScreenState prev = currentScreen;
         currentScreen = screen;
         lastScreenChange = millis();
         lastUserInteraction = millis();
-        Serial.printf("[DisplayManager] Screen changed to: %d\\n", screen);
+        // Force a redraw on any screen transition by clearing caches and the panel
+        resetCachedData();
+        if (lcd) {
+            lcd->fillScreen(COLOR_BACKGROUND);
+        }
+        Serial.printf("[DisplayManager] Screen changed from %d to %d (cache reset)\n", prev, screen);
     }
 }
 
@@ -817,30 +823,66 @@ bool DisplayManager::detectSwipe(int& deltaX, int& deltaY) {
     // Primary axis must be larger than orthogonal by a factor to avoid diagonals
     const float AXIS_DOMINANCE = 1.5f; // primary axis must be 1.5x the other
 
+    // Early rejection: insufficient movement on both axes
     if (absX < Config::GESTURE_SWIPE_THRESHOLD && absY < Config::GESTURE_SWIPE_THRESHOLD) {
-        return false; // not enough movement on either axis
+        if (Config::DEBUG_SERIAL) {
+            Serial.printf("[GestureDebug] Reject: distance too small (dx=%d dy=%d th=%d)\n", absX, absY, Config::GESTURE_SWIPE_THRESHOLD);
+        }
+        return false;
     }
 
+    // Time exceeded
     if (duration > Config::GESTURE_MAX_TIME_MS) {
-        return false; // took too long
+        if (Config::DEBUG_SERIAL) {
+            Serial.printf("[GestureDebug] Reject: duration %lums > %lums\n", duration, Config::GESTURE_MAX_TIME_MS);
+        }
+        return false;
     }
 
     // Compute per-axis velocity (pixels/sec)
     float vx = (absX * 1000.0f) / (duration + 1);
     float vy = (absY * 1000.0f) / (duration + 1);
 
-    // Check axis dominance and velocity on primary axis
-    if (absX >= absY * AXIS_DOMINANCE) {
-        // horizontal primary
-        if (vx < Config::GESTURE_SWIPE_VELOCITY_MIN) return false;
+    // Determine primary axis and validate
+    bool horizontalPrimary = absX >= absY * AXIS_DOMINANCE;
+    bool verticalPrimary   = absY >= absX * AXIS_DOMINANCE;
+
+    // Leniency factors for slower but clearly intentional swipes
+    const float SLOW_VELOCITY_FACTOR = 0.6f; // allow at 60% velocity if distance is well above threshold
+    const int   DIST_LENIENCY_FACTOR = 2;     // require 2x distance threshold for lenient velocity
+
+    if (horizontalPrimary) {
+        bool velocityOk = vx >= Config::GESTURE_SWIPE_VELOCITY_MIN;
+        bool velocityLenientOk = (!velocityOk) && (vx >= Config::GESTURE_SWIPE_VELOCITY_MIN * SLOW_VELOCITY_FACTOR) && (absX >= Config::GESTURE_SWIPE_THRESHOLD * DIST_LENIENCY_FACTOR);
+        if (!velocityOk && !velocityLenientOk) {
+            if (Config::DEBUG_SERIAL) {
+                Serial.printf("[GestureDebug] Reject: horizontal velocity %.1f < min %.1f (lenient %.1f) dx=%d\n", vx, (float)Config::GESTURE_SWIPE_VELOCITY_MIN, Config::GESTURE_SWIPE_VELOCITY_MIN * SLOW_VELOCITY_FACTOR, absX);
+            }
+            return false;
+        }
+        if (Config::DEBUG_SERIAL) {
+            Serial.printf("[GestureDebug] Accept horizontal swipe: dx=%d vx=%.1f dur=%lums lenient=%s\n", absX, vx, duration, velocityLenientOk ? "YES" : "NO");
+        }
         return true;
-    } else if (absY >= absX * AXIS_DOMINANCE) {
-        // vertical primary
-        if (vy < Config::GESTURE_SWIPE_VELOCITY_MIN) return false;
+    } else if (verticalPrimary) {
+        bool velocityOk = vy >= Config::GESTURE_SWIPE_VELOCITY_MIN;
+        bool velocityLenientOk = (!velocityOk) && (vy >= Config::GESTURE_SWIPE_VELOCITY_MIN * SLOW_VELOCITY_FACTOR) && (absY >= Config::GESTURE_SWIPE_THRESHOLD * DIST_LENIENCY_FACTOR);
+        if (!velocityOk && !velocityLenientOk) {
+            if (Config::DEBUG_SERIAL) {
+                Serial.printf("[GestureDebug] Reject: vertical velocity %.1f < min %.1f (lenient %.1f) dy=%d\n", vy, (float)Config::GESTURE_SWIPE_VELOCITY_MIN, Config::GESTURE_SWIPE_VELOCITY_MIN * SLOW_VELOCITY_FACTOR, absY);
+            }
+            return false;
+        }
+        if (Config::DEBUG_SERIAL) {
+            Serial.printf("[GestureDebug] Accept vertical swipe: dy=%d vy=%.1f dur=%lums lenient=%s\n", absY, vy, duration, velocityLenientOk ? "YES" : "NO");
+        }
         return true;
     }
 
-    return false; // diagonal or ambiguous
+    if (Config::DEBUG_SERIAL) {
+        Serial.printf("[GestureDebug] Reject: ambiguous/diagonal dx=%d dy=%d ratio=%.2f\n", absX, absY, absY == 0 ? 999.0f : (float)absX / absY);
+    }
+    return false;
 }
 
 void DisplayManager::handleSwipeLeft() {
@@ -855,14 +897,15 @@ void DisplayManager::handleSwipeLeft() {
 }
 
 void DisplayManager::handleSwipeRight() {
-    Serial.println("[Gesture] Swipe RIGHT");
-    
+    Serial.printf("[Gesture] Swipe RIGHT (current=%d)\n", currentScreen);
     if (currentScreen == SCREEN_AIRCRAFT_DETAIL || currentScreen == SCREEN_NO_AIRCRAFT) {
-        // From aircraft view, return to home
+        setScreen(SCREEN_HOME);
+        setStatusMessage("Home");
+    } else if (currentScreen != SCREEN_HOME) {
+        // Fallback: any unknown/non-home screen returns home
         setScreen(SCREEN_HOME);
         setStatusMessage("Home");
     }
-    // If already on home, do nothing
 }
 
 void DisplayManager::handleSwipeUp() {
