@@ -6,14 +6,14 @@
 #include <WiFi.h>
 #include <time.h>
 #include "config/Config.h"
-#include "DisplayManager.h"
+#include "LVGLDisplayManager.h"
 #include "services/OpenSkyService.h"
 #include "services/WeatherService.h"
 #include "models/Aircraft.h"
 #include "models/WeatherData.h"
 
 // Global instances
-static DisplayManager* display = nullptr;
+static LVGLDisplayManager* display = nullptr;
 static OpenSkyService* openSkyService = nullptr;
 static WeatherService* weatherService = nullptr;
 static Aircraft* aircraftList = nullptr;
@@ -50,7 +50,7 @@ void setup() {
     }
     
     // Initialize display first (so we can show status)
-    display = new DisplayManager();
+    display = new LVGLDisplayManager();
     if (!display) {
         Serial.println("[ERROR] Display allocation failed");
         while(1) delay(1000);
@@ -68,9 +68,9 @@ void setup() {
     // The early I2C scan before display init is sufficient for diagnostics.
     
     // Connect to WiFi with visual feedback
-    display->showError("Connecting...", "Waiting for WiFi");
+    display->setStatusMessage("Connecting to WiFi...");
     if (!connectWiFi()) {
-        display->showError("WiFi Error", "Failed to connect");
+        display->setStatusMessage("WiFi Error - Failed to connect");
         Serial.println("[ERROR] WiFi connection failed");
         while(1) delay(1000);
     }
@@ -90,12 +90,12 @@ void setup() {
     // Initialize services
     openSkyService = new OpenSkyService();
     if (!openSkyService) {
-        display->showError("Error", "OpenSky service failed");
+        display->setStatusMessage("Error - OpenSky service failed");
         Serial.println("[ERROR] OpenSky allocation failed");
         while(1) delay(1000);
     }
     
-    display->showError("Authenticating...", "OpenSky Network");
+    display->setStatusMessage("Authenticating with OpenSky...");
     if (!openSkyService->initialize()) {
         Serial.println("[WARN] OpenSky authentication failed - using anonymous access");
         // Continue anyway - anonymous access might work
@@ -105,24 +105,32 @@ void setup() {
     
     weatherService = new WeatherService(Config::WEATHER_API_KEY, Config::WEATHER_CITY);
     if (!weatherService) {
-        display->showError("Error", "Weather service failed");
+        display->setStatusMessage("Error - Weather service failed");
         Serial.println("[ERROR] Weather service allocation failed");
         while(1) delay(1000);
     }
     Serial.println("[INIT] ✅ Weather service ready");
     
     // Initial data fetch
-    display->showError("Loading...", "Fetching initial data");
+    display->setStatusMessage("Loading initial data...");
     updateWeather();
     updateAircraft();
     
     Serial.println("[INIT] === System Ready ===\n");
     delay(1000);
-    display->clear();
 }
 
 void loop() {
     unsigned long now = millis();
+    
+    // LVGL tick - critical for animations and timers
+    static unsigned long lastTick = 0;
+    unsigned long tickDelta = now - lastTick;
+    if (tickDelta > 0) {
+        if (display) display->tick(tickDelta);
+        lastTick = now;
+    }
+    
     // Track last screen change we have already redrawn for immediate screen transitions
     static unsigned long lastRedrawnScreenChange = 0;
     // Serial command parser: type 'CAL' + Enter in Serial Monitor to run touch calibration on demand
@@ -164,7 +172,7 @@ void loop() {
 
     // If raw touch mode is enabled, dump getTouch() samples to serial for debugging
     if (_rawTouchMode && display) {
-        LGFX* lg = display->getDisplay();
+        auto lg = display->getLCD();
         if (lg) {
             int tx=0, ty=0;
             if (lg->getTouch(&tx, &ty)) {
@@ -174,7 +182,24 @@ void loop() {
         delay(50); // slow down prints
     }
     
-    // Process touch gestures continuously for responsive UI
+        // Night mode brightness adjustment (22:00-06:00)
+        struct tm timeinfoLoop;
+        if (getLocalTime(&timeinfoLoop)) {
+            int hour = timeinfoLoop.tm_hour;
+            bool night = (hour >= Config::NIGHT_START_HOUR) || (hour < Config::NIGHT_END_HOUR);
+            static bool lastNight = false;
+            if (night != lastNight && display) {
+                if (night) {
+                    display->setBrightness(Config::NIGHT_BRIGHTNESS);
+                    Serial.println("[Display] Night mode brightness applied");
+                } else {
+                    display->setBrightness(Config::BRIGHTNESS_MAX);
+                    Serial.println("[Display] Day mode brightness restored");
+                }
+                lastNight = night;
+            }
+        }
+
     if (display) {
         display->processTouch();
     }
@@ -191,7 +216,7 @@ void loop() {
     
     // Check if we should auto-return to home screen
     if (display && display->shouldReturnToHome()) {
-        display->setScreen(DisplayManager::SCREEN_HOME);
+        display->setScreen(LVGLDisplayManager::SCREEN_HOME);
         Serial.println("[UI] Auto-returning to home screen");
     }
     
@@ -211,7 +236,7 @@ void loop() {
     }
     
     // Auto-cycle through aircraft when in aircraft view
-    if (display && display->getCurrentScreen() == DisplayManager::SCREEN_AIRCRAFT_DETAIL) {
+    if (display && display->getCurrentScreen() == LVGLDisplayManager::SCREEN_AIRCRAFT_DETAIL) {
         if (currentAircraftCount > 1) {
             if (now - lastPlaneSwitch >= Config::PLANE_DISPLAY_TIME) {
                 currentAircraftIndex = (currentAircraftIndex + 1) % currentAircraftCount;
@@ -344,13 +369,13 @@ void updateDisplay() {
     if (!display) return;
     
     // Determine what screen to show based on current state
-    DisplayManager::ScreenState currentScreen = display->getCurrentScreen();
+    LVGLDisplayManager::ScreenState currentScreen = display->getCurrentScreen();
     
-    if (currentScreen == DisplayManager::SCREEN_HOME) {
+    if (currentScreen == LVGLDisplayManager::SCREEN_HOME) {
         // Home screen - weather with plane counter
         display->update(currentWeather, nullptr, currentAircraftCount);
     } 
-    else if (currentScreen == DisplayManager::SCREEN_AIRCRAFT_DETAIL) {
+    else if (currentScreen == LVGLDisplayManager::SCREEN_AIRCRAFT_DETAIL) {
         // Aircraft detail screen
         if (currentAircraftCount > 0 && 
             currentAircraftIndex < currentAircraftCount &&
@@ -358,10 +383,10 @@ void updateDisplay() {
             display->update(currentWeather, &aircraftList[currentAircraftIndex], currentAircraftCount);
         } else {
             // No valid aircraft - switch to no aircraft screen
-            display->setScreen(DisplayManager::SCREEN_NO_AIRCRAFT);
+            display->setScreen(LVGLDisplayManager::SCREEN_NO_AIRCRAFT);
         }
     }
-    else if (currentScreen == DisplayManager::SCREEN_NO_AIRCRAFT) {
+    else if (currentScreen == LVGLDisplayManager::SCREEN_NO_AIRCRAFT) {
         // No aircraft screen
         display->update(currentWeather, nullptr, 0);
     }

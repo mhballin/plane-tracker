@@ -94,138 +94,6 @@ void DisplayManager::update(const WeatherData& weather, const Aircraft* aircraft
             break;
     }
 
-    // Always refresh the status bar (clock / status message)
-    // even if the main screen content didn't change, so the
-    // time and transient status messages stay current.
-    drawStatusBar();
-}
-
-// Set display brightness
-void DisplayManager::setBrightness(uint8_t brightness) {
-    currentBrightness = brightness;
-    if (lcd) {
-        lcd->setBrightness(brightness);
-    }
-}
-
-// Adjust brightness by delta amount
-void DisplayManager::adjustBrightness(int delta) {
-    int newBrightness = currentBrightness + delta;
-    newBrightness = constrain(newBrightness, Config::BRIGHTNESS_MIN, Config::BRIGHTNESS_MAX);
-    
-    if (newBrightness != currentBrightness) {
-        setBrightness(newBrightness);
-        Serial.printf("[DisplayManager] Brightness adjusted to %d\\n", currentBrightness);
-        setStatusMessage("Brightness: " + String(currentBrightness));
-    }
-}
-
-// Clear the display
-void DisplayManager::clear() {
-    if (lcd) {
-        lcd->fillScreen(COLOR_BACKGROUND);
-    }
-}
-
-// Show error message
-void DisplayManager::showError(const char* title, const char* message) {
-    if (!lcd) return;
-    
-    lcd->fillScreen(COLOR_BACKGROUND);
-    lcd->setTextColor(COLOR_TEXT);
-    lcd->setTextSize(2);
-    
-    // Center title
-    int16_t titleX = (lcd->width() - strlen(title) * 12) / 2;
-    lcd->setCursor(titleX, lcd->height() / 2 - 40);
-    lcd->print(title);
-    
-    // Center message
-    lcd->setTextSize(1);
-    int16_t msgX = (lcd->width() - strlen(message) * 6) / 2;
-    lcd->setCursor(msgX, lcd->height() / 2 + 20);
-    lcd->print(message);
-}
-
-// ========================================
-// Screen State Management
-// ========================================
-void DisplayManager::setScreen(ScreenState screen) {
-    if (currentScreen != screen) {
-        ScreenState prev = currentScreen;
-        currentScreen = screen;
-        lastScreenChange = millis();
-        lastUserInteraction = millis();
-        // Force a redraw on any screen transition by clearing caches and the panel
-        resetCachedData();
-        if (lcd) {
-            lcd->fillScreen(COLOR_BACKGROUND);
-        }
-        Serial.printf("[DisplayManager] Screen changed from %d to %d (cache reset)\n", prev, screen);
-    }
-}
-
-bool DisplayManager::shouldReturnToHome() const {
-    // Only auto-return if we're not already on home and enough time has passed
-    if (currentScreen == SCREEN_HOME) {
-        return false;
-    }
-    
-    unsigned long elapsed = millis() - lastUserInteraction;
-    return elapsed >= Config::UI_AUTO_HOME_MS;
-}
-
-void DisplayManager::resetIdleTimer() {
-    lastUserInteraction = millis();
-}
-
-// Set status message
-void DisplayManager::setStatusMessage(const String& msg) {
-    m_statusMsg = msg;
-    m_statusSetAt = millis();
-    
-    if (Config::DEBUG_SERIAL) {
-        Serial.printf("[DisplayManager] Status: %s\\n", msg.c_str());
-    }
-}
-
-// Set last update timestamp
-void DisplayManager::setLastUpdateTimestamp(time_t epochSecs) {
-    m_lastUpdateTime = epochSecs;
-}
-
-// Reset cached data to force redraw
-void DisplayManager::resetCachedData() {
-    lastCallsign = "";
-    lastWeatherTemp = -999.0f;
-    lastWeatherCondition = "";
-    lastWeatherHumidity = -999.0f;
-    lastWeatherPressure = -999.0f;
-    lastWeatherDescription = "";
-}
-
-// Draw header
-void DisplayManager::drawHeader(const char* title) {
-    if (!lcd) return;
-    
-    lcd->fillRect(0, 0, lcd->width(), 40, COLOR_PANEL);
-    lcd->setTextColor(COLOR_TEXT);
-    lcd->setTextSize(2);
-    lcd->setCursor(10, 10);
-    lcd->print(title);
-}
-
-// Draw card
-void DisplayManager::drawCard(int x, int y, int w, int h, const char* title) {
-    if (!lcd) return;
-    
-    lcd->fillRect(x, y, w, h, COLOR_PANEL);
-    lcd->drawRect(x, y, w, h, COLOR_ACCENT);
-    
-    lcd->setTextColor(COLOR_SUBTEXT);
-    lcd->setTextSize(1);
-    lcd->setCursor(x + 10, y + 10);
-    lcd->print(title);
 }
 
 // Draw divider line
@@ -376,217 +244,7 @@ void DisplayManager::drawRainIcon(int x, int y, int size) {
 void DisplayManager::drawPartlyCloudyIcon(int x, int y, int size) {
     if (!lcd) return;
     drawSunIcon(x - size / 4, y - size / 4, size / 2);
-    drawCloudIcon(x + size / 4, y + size / 4, size / 2);
-}
-
-void DisplayManager::drawPlaneIcon(int x, int y, int size) {
-    if (!lcd) return;
-    // Simple plane shape
-    lcd->fillTriangle(x, y - size / 2, x - size / 3, y + size / 3, x + size / 3, y + size / 3, COLOR_ACCENT);
-    lcd->fillRect(x - size / 6, y - size / 4, size / 3, size / 2, COLOR_ACCENT);
-}
-
-// Select appropriate weather icon based on condition
-void DisplayManager::drawWeatherIcon(int x, int y, int size, const String& condition) {
-    String cond = condition;
-    cond.toLowerCase();
-    
-    if (cond.indexOf("clear") >= 0 || cond.indexOf("sun") >= 0) {
-        drawSunIcon(x, y, size);
-    } else if (cond.indexOf("cloud") >= 0 && cond.indexOf("part") >= 0) {
-        drawPartlyCloudyIcon(x, y, size);
-    } else if (cond.indexOf("rain") >= 0 || cond.indexOf("drizzle") >= 0) {
-        drawRainIcon(x, y, size);
-    } else if (cond.indexOf("cloud") >= 0) {
-        drawCloudIcon(x, y, size);
-    } else {
-        // Default to cloud
-        drawCloudIcon(x, y, size);
-    }
-}
-
-// Show clock screen
-void DisplayManager::showClock() {
-    if (!lcd) return;
-    
-    lcd->fillScreen(COLOR_BACKGROUND);
-    
-    struct tm timeinfo;
-    if (getLocalTime(&timeinfo)) {
-        char timeStr[16];
-        char dateStr[32];
-        snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", 
-                 timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
-        snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d", 
-                 timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday);
-        
-        lcd->setTextColor(COLOR_TEXT);
-        lcd->setTextSize(4);
-        int16_t timeX = (lcd->width() - strlen(timeStr) * 24) / 2;
-        lcd->setCursor(timeX, lcd->height() / 2 - 40);
-        lcd->print(timeStr);
-        
-        lcd->setTextSize(2);
-        int16_t dateX = (lcd->width() - strlen(dateStr) * 12) / 2;
-        lcd->setCursor(dateX, lcd->height() / 2 + 20);
-        lcd->print(dateStr);
-    }
-    
-    drawStatusBar();
-}
-
-// Show weather screen (HOME)
-void DisplayManager::showWeather(const WeatherData& weather) {
-    if (!lcd) return;
-    
-    // Only redraw if data changed to reduce flicker
-    if (weather.temperature == lastWeatherTemp && 
-        weather.condition == lastWeatherCondition) {
-        return;
-    }
-    
-    lcd->fillScreen(COLOR_BACKGROUND);
-    
-    // Header: "WEATHER STATION" + Location
-    lcd->setTextColor(COLOR_SUBTEXT);
-    lcd->setTextSize(1);
-    lcd->setCursor(20, 10);
-    lcd->print("WEATHER STATION");
-    
-    lcd->setTextColor(COLOR_TEXT);
-    lcd->setTextSize(2);
-    lcd->setCursor(20, 30);
-    lcd->print("Portland, ME");
-    
-    // Date and time in top right
-    struct tm timeinfo;
-    if (getLocalTime(&timeinfo)) {
-        char dateStr[32];
-        char timeStr[16];
-        const char* dayNames[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-        snprintf(dateStr, sizeof(dateStr), "%s, Oct %d", dayNames[timeinfo.tm_wday], timeinfo.tm_mday);
-        snprintf(timeStr, sizeof(timeStr), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
-        
-        lcd->setTextColor(COLOR_SUBTEXT);
-        lcd->setTextSize(1);
-        int dateX = lcd->width() - strlen(dateStr) * 6 - 20;
-        lcd->setCursor(dateX, 10);
-        lcd->print(dateStr);
-        
-        lcd->setTextColor(COLOR_TEXT);
-        lcd->setTextSize(2);
-        int timeX = lcd->width() - strlen(timeStr) * 12 - 20;
-        lcd->setCursor(timeX, 30);
-        lcd->print(timeStr);
-    }
-    
-    // Current weather - Large temp and icon
-    int currentWeatherY = 80;
-    
-    // Big weather icon on left
-    drawWeatherIcon(60, currentWeatherY + 40, 80, weather.condition);
-    
-    // Temperature
-    char tempStr[16];
-    snprintf(tempStr, sizeof(tempStr), "%.0f°", weather.temperature);
-    lcd->setTextColor(COLOR_TEXT);
-    lcd->setTextSize(6);
-    lcd->setCursor(150, currentWeatherY);
-    lcd->print(tempStr);
-    
-    // Condition description
-    lcd->setTextColor(COLOR_SUBTEXT);
-    lcd->setTextSize(2);
-    lcd->setCursor(150, currentWeatherY + 75);
-    lcd->print(weather.description);
-    
-    // High/Low/Feels Like in small cards
-    int detailY = currentWeatherY + 110;
-    lcd->setTextColor(COLOR_SUBTEXT);
-    lcd->setTextSize(1);
-    
-    lcd->setCursor(150, detailY);
-    lcd->print("HIGH");
-    lcd->setCursor(220, detailY);
-    lcd->print("LOW");
-    lcd->setCursor(290, detailY);
-    lcd->print("FEELS LIKE");
-    
-    lcd->setTextColor(COLOR_TEXT);
-    lcd->setTextSize(2);
-    char highStr[8], lowStr[8], feelsStr[8];
-    snprintf(highStr, sizeof(highStr), "72°");
-    snprintf(lowStr, sizeof(lowStr), "58°");
-    snprintf(feelsStr, sizeof(feelsStr), "65°");
-    
-    lcd->setCursor(150, detailY + 15);
-    lcd->print(highStr);
-    lcd->setCursor(220, detailY + 15);
-    lcd->print(lowStr);
-    lcd->setCursor(290, detailY + 15);
-    lcd->print(feelsStr);
-    
-    // Humidity, Wind, Visibility, Pressure in bottom left
-    int metricsY = 260;
-    lcd->setTextColor(COLOR_SUBTEXT);
-    lcd->setTextSize(1);
-    
-    lcd->setCursor(20, metricsY);
-    lcd->print("HUMIDITY");
-    lcd->setCursor(120, metricsY);
-    lcd->print("WIND");
-    
-    lcd->setTextColor(COLOR_TEXT);
-    lcd->setTextSize(2);
-    char humidStr[16], windStr[16];
-    snprintf(humidStr, sizeof(humidStr), "%.0f%%", weather.humidity);
-    snprintf(windStr, sizeof(windStr), "12 mph");
-    
-    lcd->setCursor(20, metricsY + 15);
-    lcd->print(humidStr);
-    lcd->setCursor(120, metricsY + 15);
-    lcd->print(windStr);
-    
-    lcd->setTextColor(COLOR_SUBTEXT);
-    lcd->setTextSize(1);
-    lcd->setCursor(20, metricsY + 50);
-    lcd->print("VISIBILITY");
-    lcd->setCursor(120, metricsY + 50);
-    lcd->print("PRESSURE");
-    
-    lcd->setTextColor(COLOR_TEXT);
-    lcd->setTextSize(2);
-    char visStr[16], pressStr[16];
-    snprintf(visStr, sizeof(visStr), "10 mi");
-    snprintf(pressStr, sizeof(pressStr), "%.0fmb", weather.pressure);
-    
-    lcd->setCursor(20, metricsY + 65);
-    lcd->print(visStr);
-    lcd->setCursor(120, metricsY + 65);
-    lcd->print(pressStr);
-    
-    // 7-DAY FORECAST on the right side
-    int forecastX = 440;
-    int forecastY = 80;
-    
-    lcd->setTextColor(COLOR_SUBTEXT);
-    lcd->setTextSize(1);
-    lcd->setCursor(forecastX, forecastY);
-    lcd->print("7-DAY FORECAST");
-    
-    // Forecast days (placeholder data matching your Figma)
-    const char* days[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
-    const char* icons[] = {"cloud", "rain", "rain", "cloud", "sun", "sun", "sun"};
-    const char* lows[] = {"58°", "56°", "52°", "54°", "60°", "62°", "58°"};
-    const char* highs[] = {"72°", "70°", "65°", "68°", "75°", "78°", "74°"};
-    
-    for (int i = 0; i < 7; i++) {
-        int dayY = forecastY + 30 + (i * 45);
-        drawForecastDay(forecastX, dayY, days[i], icons[i], lows[i], highs[i]);
-    }
-    
-    lastWeatherTemp = weather.temperature;
-    lastWeatherCondition = weather.condition;
+    drawCloudIcon(x, y, size);
 }
 
 // Show aircraft detail screen
@@ -763,10 +421,41 @@ void DisplayManager::processTouch() {
         // Touch ended (or no reliable samples)
         if (touchActive && !gestureInProgress) {
             touchActive = false;
-            
-            Serial.printf("[Touch] Touch ended at (%d, %d)\n", touchLastX, touchLastY);
-            
-            checkForGestures();
+            unsigned long duration = millis() - touchStartTime;
+            int dx = touchLastX - touchStartX;
+            int dy = touchLastY - touchStartY;
+            Serial.printf("[Touch] Touch ended at (%d, %d) dur=%lums dx=%d dy=%d\n", touchLastX, touchLastY, duration, dx, dy);
+
+            // Try swipe first
+            int swipeDx=0, swipeDy=0;
+            if (detectSwipe(swipeDx, swipeDy)) {
+                if (abs(swipeDx) > abs(swipeDy)) {
+                    if (swipeDx > 0) handleSwipeRight(); else handleSwipeLeft();
+                } else {
+                    if (swipeDy > 0) handleSwipeDown(); else handleSwipeUp();
+                }
+                gestureInProgress = true;
+                resetIdleTimer();
+            } else if (abs(dx) <= Config::TAP_MAX_DISTANCE && abs(dy) <= Config::TAP_MAX_DISTANCE && duration <= Config::TAP_MAX_DURATION_MS) {
+                // Tap gesture
+                Serial.println("[GestureDebug] Tap recognized");
+                // Plane badge region (top-right)
+                const int badgeX0 = 720; // left
+                const int badgeY0 = 0;   // top
+                const int badgeX1 = 800; // right
+                const int badgeY1 = 80;  // bottom
+                if (currentScreen == SCREEN_HOME) {
+                    if (touchLastX >= badgeX0 && touchLastX <= badgeX1 && touchLastY >= badgeY0 && touchLastY <= badgeY1) {
+                        setScreen(SCREEN_AIRCRAFT_DETAIL);
+                        setStatusMessage("Aircraft View");
+                    }
+                } else {
+                    if (touchLastX >= badgeX0 && touchLastX <= badgeX1 && touchLastY >= badgeY0 && touchLastY <= badgeY1) {
+                        setScreen(SCREEN_HOME);
+                        setStatusMessage("Home");
+                    }
+                }
+            }
         } else {
             touchActive = false;
             gestureInProgress = false;
@@ -951,10 +640,199 @@ String DisplayManager::formatTime(const struct tm& timeinfo) {
     return String(buffer);
 }
 
-// Format date string
-String DisplayManager::formatDate(const struct tm& timeinfo) {
-    char buffer[32];
-    snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d", 
-             timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday);
-    return String(buffer);
+void DisplayManager::showWeather(const WeatherData& weather) {
+    if (!lcd) return;
+
+    // Full redraw (later optimize with partial updates)
+    lcd->fillScreen(COLOR_BACKGROUND);
+
+    // Header / Location
+    lcd->setTextColor(COLOR_SUBTEXT);
+    lcd->setTextSize(1);
+    lcd->setCursor(20, 10);
+    lcd->print("WEATHER STATION");
+    lcd->setTextColor(COLOR_TEXT);
+    lcd->setTextSize(2);
+    lcd->setCursor(20, 30);
+    lcd->print("Portland, ME");
+
+    // Date / Time (top-right)
+    struct tm timeinfo;
+    if (getLocalTime(&timeinfo)) {
+        char dateStr[32];
+        char timeStr[16];
+        const char* dayNames[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+        snprintf(dateStr, sizeof(dateStr), "%s %02d", dayNames[timeinfo.tm_wday], timeinfo.tm_mday);
+        snprintf(timeStr, sizeof(timeStr), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+        lcd->setTextColor(COLOR_SUBTEXT);
+        lcd->setTextSize(1);
+        int dateX = lcd->width() - strlen(dateStr) * 6 - 20;
+        lcd->setCursor(dateX, 10);
+        lcd->print(dateStr);
+        lcd->setTextColor(COLOR_TEXT);
+        lcd->setTextSize(2);
+        int timeX = lcd->width() - strlen(timeStr) * 12 - 20;
+        lcd->setCursor(timeX, 30);
+        lcd->print(timeStr);
+    }
+
+    // Plane counter badge (top-right tap region)
+    drawPlaneCounter(lcd->width() - 60, 60, currentAircraftCount);
+
+    // Main weather icon + temperature
+        int currentWeatherY = 80;
+        drawWeatherIcon(60, currentWeatherY + 40, 80, weather.condition);
+        char tempStr[16];
+        snprintf(tempStr, sizeof(tempStr), "%.0f°", weather.temperature);
+        lcd->setTextColor(COLOR_TEXT);
+        lcd->setTextSize(6);
+        lcd->setCursor(150, currentWeatherY);
+        lcd->print(tempStr);
+        lcd->setTextColor(COLOR_SUBTEXT);
+        lcd->setTextSize(2);
+        lcd->setCursor(150, currentWeatherY + 75);
+        lcd->print(weather.description);
+
+        // High / Low / Feels Like (placeholder highs/lows currently)
+        int detailY = currentWeatherY + 110;
+        lcd->setTextColor(COLOR_SUBTEXT);
+        lcd->setTextSize(1);
+        lcd->setCursor(150, detailY);     lcd->print("HIGH");
+        lcd->setCursor(220, detailY);     lcd->print("LOW");
+        lcd->setCursor(290, detailY);     lcd->print("FEELS");
+        lcd->setTextColor(COLOR_TEXT);
+        lcd->setTextSize(2);
+        char highStr[8], lowStr[8], feelsStr[8];
+        snprintf(highStr, sizeof(highStr), "%.0f°", weather.tempMax);
+        snprintf(lowStr, sizeof(lowStr), "%.0f°", weather.tempMin);
+        snprintf(feelsStr, sizeof(feelsStr), "%.0f°", weather.feelsLike);
+        lcd->setCursor(150, detailY + 15); lcd->print(highStr);
+        lcd->setCursor(220, detailY + 15); lcd->print(lowStr);
+        lcd->setCursor(290, detailY + 15); lcd->print(feelsStr);
+
+        // Secondary metrics block
+        int metricsY = 260;
+        lcd->setTextColor(COLOR_SUBTEXT); lcd->setTextSize(1);
+        lcd->setCursor(20, metricsY);   lcd->print("HUMIDITY");
+        lcd->setCursor(180, metricsY);  lcd->print("WIND");
+        lcd->setCursor(320, metricsY);  lcd->print("FEELS");
+        lcd->setTextColor(COLOR_TEXT);  lcd->setTextSize(2);
+        char humidStr[16], windStr[16], feelsVal[16];
+        snprintf(humidStr, sizeof(humidStr), "%.0f%%", weather.humidity);
+        snprintf(windStr, sizeof(windStr), "%.0f mph", weather.windSpeed);
+        snprintf(feelsVal, sizeof(feelsVal), "%.0f°", weather.feelsLike);
+        lcd->setCursor(20, metricsY + 18);  lcd->print(humidStr);
+        lcd->setCursor(180, metricsY + 18); lcd->print(windStr);
+        lcd->setCursor(320, metricsY + 18); lcd->print(feelsVal);
+
+        // Sunrise / Sunset + Updated timestamp line
+        lcd->setTextColor(COLOR_SUBTEXT); lcd->setTextSize(1);
+        struct tm riseTm, setTm, updTm;
+        time_t rise = (time_t)weather.sunrise;
+        time_t sett = (time_t)weather.sunset;
+        char riseStr[8] = "--:--"; char setStr[8] = "--:--"; char updStr[8] = "";
+        if (rise > 0) { localtime_r(&rise, &riseTm); snprintf(riseStr, sizeof(riseStr), "%02d:%02d", riseTm.tm_hour, riseTm.tm_min); }
+        if (sett > 0) { localtime_r(&sett, &setTm); snprintf(setStr, sizeof(setStr), "%02d:%02d", setTm.tm_hour, setTm.tm_min); }
+        if (m_lastUpdateTime > 0) { time_t ut = (time_t)m_lastUpdateTime; localtime_r(&ut, &updTm); snprintf(updStr, sizeof(updStr), "%02d:%02d", updTm.tm_hour, updTm.tm_min); }
+        int lineY = metricsY + 60;
+        lcd->setCursor(20, lineY); lcd->printf("Rise %s  Set %s", riseStr, setStr);
+        lcd->setCursor(200, lineY); lcd->print("Updated "); lcd->print(updStr);
+
+        // 5-day forecast (placeholder) on right
+        int forecastX = 440; int forecastY = 80;
+        lcd->setTextColor(COLOR_SUBTEXT); lcd->setTextSize(1);
+        lcd->setCursor(forecastX, forecastY); lcd->print("5-DAY FORECAST");
+        const char* days5[] = {"Mon","Tue","Wed","Thu","Fri"};
+        const char* icons5[] = {"cloud","rain","cloud","sun","sun"};
+        const char* lows5[]  = {"58°","56°","52°","54°","60°"};
+        const char* highs5[] = {"72°","70°","65°","68°","75°"};
+        for (int i=0;i<5;i++) {
+            int dayY = forecastY + 30 + (i * 55);
+            drawForecastDay(forecastX, dayY, days5[i], icons5[i], lows5[i], highs5[i]);
+        }
+
+        // Update cached references (no longer used for conditional early-return)
+        lastWeatherTemp = weather.temperature;
+        lastWeatherCondition = weather.condition;
+    }
+// =============================
+// Icon drawing implementations
+// =============================
+
+void DisplayManager::drawPlaneIcon(int x, int y, int size) {
+    if (!lcd) return;
+    // Simple placeholder: draw a triangle for the plane nose and a rectangle for the body
+    lcd->fillTriangle(x, y - size/2, x - size/2, y + size/2, x + size/2, y + size/2, COLOR_ACCENT);
+    lcd->fillRect(x - size/8, y, size/4, size/2, COLOR_ACCENT);
+}
+
+void DisplayManager::drawWeatherIcon(int x, int y, int size, const String& condition) {
+    String cond = condition;
+    cond.toLowerCase();
+    if (cond.indexOf("clear") >= 0 || cond.indexOf("sun") >= 0) {
+        drawSunIcon(x, y, size);
+    } else if (cond.indexOf("cloud") >= 0 && cond.indexOf("part") >= 0) {
+        drawPartlyCloudyIcon(x, y, size);
+    } else if (cond.indexOf("rain") >= 0 || cond.indexOf("drizzle") >= 0) {
+        drawRainIcon(x, y, size);
+    } else if (cond.indexOf("cloud") >= 0) {
+        drawCloudIcon(x, y, size);
+    } else {
+        // Default to cloud
+        drawCloudIcon(x, y, size);
+    }
+}
+
+// =============================
+// Screen and state management
+// =============================
+
+void DisplayManager::setScreen(ScreenState screen) {
+    currentScreen = screen;
+    lastScreenChange = millis();
+}
+
+void DisplayManager::setStatusMessage(const String& msg) {
+    m_statusMsg = msg;
+    m_statusSetAt = millis();
+}
+
+void DisplayManager::adjustBrightness(int delta) {
+    int newVal = (int)currentBrightness + delta;
+    if (newVal < 0) newVal = 0;
+    if (newVal > 255) newVal = 255;
+    setBrightness((uint8_t)newVal);
+}
+
+void DisplayManager::resetIdleTimer() {
+    lastUserInteraction = millis();
+}
+
+void DisplayManager::setLastUpdateTimestamp(time_t epochSecs) {
+    m_lastUpdateTime = epochSecs;
+}
+
+void DisplayManager::showError(const char* title, const char* message) {
+    if (!lcd) return;
+    lcd->fillScreen(COLOR_WARNING);
+    lcd->setTextColor(COLOR_TEXT);
+    lcd->setTextSize(3);
+    lcd->setCursor(40, 100);
+    lcd->print(title);
+    lcd->setTextSize(2);
+    lcd->setCursor(40, 160);
+    lcd->print(message);
+}
+
+void DisplayManager::clear() {
+    if (lcd) lcd->fillScreen(COLOR_BACKGROUND);
+}
+
+void DisplayManager::setBrightness(uint8_t brightness) {
+    currentBrightness = brightness;
+    if (lcd) lcd->setBrightness(brightness);
+}
+
+bool DisplayManager::shouldReturnToHome() const {
+    return (millis() - lastUserInteraction) > Config::UI_AUTO_HOME_MS;
 }

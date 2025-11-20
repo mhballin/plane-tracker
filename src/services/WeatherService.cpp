@@ -85,6 +85,7 @@ bool WeatherService::parseWeatherData(const String& jsonData, WeatherData& weath
     JsonObject main = root["main"].as<JsonObject>();
     JsonArray weatherArray = root["weather"].as<JsonArray>();
     JsonObject wind = root["wind"].as<JsonObject>();
+    JsonObject sys  = root["sys"].as<JsonObject>();
 
     if (weatherArray.size() > 0) {
         weather.temperature = main["temp"] | 0.0f;
@@ -97,6 +98,8 @@ bool WeatherService::parseWeatherData(const String& jsonData, WeatherData& weath
         weather.visibility = root["visibility"] | 0.0f; // meters
         weather.condition = weatherArray[0]["main"] | "Unknown";
         weather.description = weatherArray[0]["description"] | "No description";
+        weather.sunrise = sys["sunrise"] | 0UL;
+        weather.sunset  = sys["sunset"]  | 0UL;
         return true;
     }
 
