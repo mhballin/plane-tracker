@@ -82,13 +82,16 @@ public:
 static LVGLDisplayManager* s_instance = nullptr;
 
 // Color definitions (LVGL uses 0xRRGGBB format for true colors)
-#define COLOR_BACKGROUND lv_color_hex(0x0a0e27)  // Deep blue-black
-#define COLOR_CARD lv_color_hex(0x1a1f3a)        // Card background
-#define COLOR_ACCENT lv_color_hex(0x00d9ff)      // Cyan accent
-#define COLOR_TEXT_PRIMARY lv_color_hex(0xffffff)
-#define COLOR_TEXT_SECONDARY lv_color_hex(0x8b92b0)
-#define COLOR_SUCCESS lv_color_hex(0x4ade80)
-#define COLOR_WARNING lv_color_hex(0xfbbf24)
+// "Modern Day" Theme - Clean, Professional, Hides Backlight Bleed
+#define COLOR_BG_TOP     lv_color_hex(0xf1f5f9)  // Slate 100 (Light Grey)
+#define COLOR_BG_BOTTOM  lv_color_hex(0xe2e8f0)  // Slate 200 (Slightly darker for gradient)
+#define COLOR_CARD       lv_color_hex(0xffffff)  // Pure White Cards
+#define COLOR_CARD_BORDER lv_color_hex(0xcbd5e1) // Slate 300 (Subtle border)
+#define COLOR_ACCENT     lv_color_hex(0x0284c7)  // Sky 600 (Deep Blue)
+#define COLOR_TEXT_PRIMARY lv_color_hex(0x0f172a) // Slate 900 (Almost Black)
+#define COLOR_TEXT_SECONDARY lv_color_hex(0x64748b) // Slate 500 (Grey text)
+#define COLOR_SUCCESS    lv_color_hex(0x22c55e)  // Green 500
+#define COLOR_WARNING    lv_color_hex(0xf59e0b)  // Amber 500
 
 // Constructor
 LVGLDisplayManager::LVGLDisplayManager()
@@ -102,6 +105,9 @@ LVGLDisplayManager::LVGLDisplayManager()
     , label_date(nullptr)
     , label_temperature(nullptr)
     , label_weather_desc(nullptr)
+    , label_feels_like(nullptr)   // New
+    , label_temp_range(nullptr)   // New
+    , label_visibility(nullptr)   // New
     , label_humidity(nullptr)
     , label_pressure(nullptr)
     , label_wind(nullptr)
@@ -112,6 +118,8 @@ LVGLDisplayManager::LVGLDisplayManager()
     , btn_view_planes(nullptr)
     , label_callsign(nullptr)
     , label_aircraft_type(nullptr)
+    , label_airline(nullptr)      // New
+    , label_route(nullptr)        // New
     , label_altitude(nullptr)
     , label_velocity(nullptr)
     , label_heading(nullptr)
@@ -224,13 +232,16 @@ void LVGLDisplayManager::touchpad_read(lv_indev_t* indev, lv_indev_data_t* data)
 // Build home screen with modern card-based layout
 void LVGLDisplayManager::build_home_screen() {
     screen_home = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen_home, COLOR_BACKGROUND, 0);
+    // Gradient Background (Hides LCD backlight bleed)
+    lv_obj_set_style_bg_color(screen_home, COLOR_BG_TOP, 0);
+    lv_obj_set_style_bg_grad_color(screen_home, COLOR_BG_BOTTOM, 0);
+    lv_obj_set_style_bg_grad_dir(screen_home, LV_GRAD_DIR_VER, 0);
     
     // Top bar with time/date
     lv_obj_t* top_bar = lv_obj_create(screen_home);
     lv_obj_set_size(top_bar, 800, 80);
     lv_obj_align(top_bar, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(top_bar, COLOR_CARD, 0);
+    lv_obj_set_style_bg_opa(top_bar, LV_OPA_TRANSP, 0); // Transparent background
     lv_obj_set_style_border_width(top_bar, 0, 0);
     lv_obj_set_style_radius(top_bar, 0, 0);
     
@@ -251,7 +262,11 @@ void LVGLDisplayManager::build_home_screen() {
     lv_obj_set_size(weather_card, 480, 320);
     lv_obj_align(weather_card, LV_ALIGN_TOP_LEFT, 20, 100);
     lv_obj_set_style_bg_color(weather_card, COLOR_CARD, 0);
-    lv_obj_set_style_border_width(weather_card, 0, 0);
+    lv_obj_set_style_border_color(weather_card, COLOR_CARD_BORDER, 0); // Add border
+    lv_obj_set_style_border_width(weather_card, 2, 0);                 // 2px border
+    lv_obj_set_style_shadow_width(weather_card, 20, 0);                // Soft shadow
+    lv_obj_set_style_shadow_color(weather_card, lv_color_black(), 0);
+    lv_obj_set_style_shadow_opa(weather_card, LV_OPA_30, 0);
     lv_obj_set_style_radius(weather_card, 16, 0);
     lv_obj_set_style_pad_all(weather_card, 20, 0);
     
@@ -268,6 +283,20 @@ void LVGLDisplayManager::build_home_screen() {
     lv_obj_set_style_text_color(label_weather_desc, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_weather_desc, "Loading...");
     lv_obj_align(label_weather_desc, LV_ALIGN_TOP_LEFT, 0, 70);
+
+    // Feels Like
+    label_feels_like = lv_label_create(weather_card);
+    lv_obj_set_style_text_font(label_feels_like, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(label_feels_like, COLOR_TEXT_SECONDARY, 0);
+    lv_label_set_text(label_feels_like, "Feels: --°F");
+    lv_obj_align(label_feels_like, LV_ALIGN_TOP_LEFT, 0, 100);
+
+    // Temp Range
+    label_temp_range = lv_label_create(weather_card);
+    lv_obj_set_style_text_font(label_temp_range, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(label_temp_range, COLOR_TEXT_SECONDARY, 0);
+    lv_label_set_text(label_temp_range, "H: --° L: --°");
+    lv_obj_align(label_temp_range, LV_ALIGN_TOP_LEFT, 0, 125);
     
     // Humidity arc (circular gauge)
     arc_humidity = lv_arc_create(weather_card);
@@ -286,40 +315,56 @@ void LVGLDisplayManager::build_home_screen() {
     lv_label_set_text(label_humidity, "--%");
     lv_obj_center(label_humidity);
     
+    // Right side column for details
+    int right_col_x = 200;
+    int start_y = 20;
+    int line_height = 35;
+
     // Pressure
     label_pressure = lv_label_create(weather_card);
     lv_obj_set_style_text_font(label_pressure, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label_pressure, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_pressure, "Pressure: -- inHg");
-    lv_obj_align(label_pressure, LV_ALIGN_BOTTOM_LEFT, 140, -80);
+    lv_obj_align(label_pressure, LV_ALIGN_TOP_LEFT, right_col_x, start_y);
     
     // Wind
     label_wind = lv_label_create(weather_card);
     lv_obj_set_style_text_font(label_wind, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label_wind, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_wind, "Wind: -- mph");
-    lv_obj_align(label_wind, LV_ALIGN_BOTTOM_LEFT, 140, -50);
+    lv_obj_align(label_wind, LV_ALIGN_TOP_LEFT, right_col_x, start_y + line_height);
+
+    // Visibility
+    label_visibility = lv_label_create(weather_card);
+    lv_obj_set_style_text_font(label_visibility, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(label_visibility, COLOR_TEXT_SECONDARY, 0);
+    lv_label_set_text(label_visibility, "Vis: -- mi");
+    lv_obj_align(label_visibility, LV_ALIGN_TOP_LEFT, right_col_x, start_y + line_height * 2);
     
     // Sunrise
     label_sunrise = lv_label_create(weather_card);
     lv_obj_set_style_text_font(label_sunrise, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label_sunrise, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_sunrise, LV_SYMBOL_UP " --:--");
-    lv_obj_align(label_sunrise, LV_ALIGN_BOTTOM_LEFT, 140, -20);
+    lv_obj_align(label_sunrise, LV_ALIGN_TOP_LEFT, right_col_x, start_y + line_height * 3);
     
     // Sunset
     label_sunset = lv_label_create(weather_card);
     lv_obj_set_style_text_font(label_sunset, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label_sunset, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_sunset, LV_SYMBOL_DOWN " --:--");
-    lv_obj_align(label_sunset, LV_ALIGN_BOTTOM_LEFT, 280, -20);
+    lv_obj_align(label_sunset, LV_ALIGN_TOP_LEFT, right_col_x, start_y + line_height * 4);
     
     // Aircraft card (right side)
     lv_obj_t* aircraft_card = lv_obj_create(screen_home);
     lv_obj_set_size(aircraft_card, 260, 320);
     lv_obj_align(aircraft_card, LV_ALIGN_TOP_RIGHT, -20, 100);
     lv_obj_set_style_bg_color(aircraft_card, COLOR_CARD, 0);
-    lv_obj_set_style_border_width(aircraft_card, 0, 0);
+    lv_obj_set_style_border_color(aircraft_card, COLOR_CARD_BORDER, 0); // Add border
+    lv_obj_set_style_border_width(aircraft_card, 2, 0);
+    lv_obj_set_style_shadow_width(aircraft_card, 20, 0);
+    lv_obj_set_style_shadow_color(aircraft_card, lv_color_black(), 0);
+    lv_obj_set_style_shadow_opa(aircraft_card, LV_OPA_30, 0);
     lv_obj_set_style_radius(aircraft_card, 16, 0);
     lv_obj_set_style_pad_all(aircraft_card, 20, 0);
     
@@ -352,7 +397,7 @@ void LVGLDisplayManager::build_home_screen() {
     lv_obj_add_event_cb(btn_view_planes, event_btn_view_planes, LV_EVENT_CLICKED, this);
     
     lv_obj_t* btn_label = lv_label_create(btn_view_planes);
-    lv_obj_set_style_text_color(btn_label, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_color(btn_label, lv_color_hex(0xffffff), 0); // White text on blue button
     lv_label_set_text(btn_label, "View Aircraft");
     lv_obj_center(btn_label);
 }
@@ -360,13 +405,18 @@ void LVGLDisplayManager::build_home_screen() {
 // Build aircraft detail screen
 void LVGLDisplayManager::build_aircraft_screen() {
     screen_aircraft = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen_aircraft, COLOR_BACKGROUND, 0);
+    // Gradient Background
+    lv_obj_set_style_bg_color(screen_aircraft, COLOR_BG_TOP, 0);
+    lv_obj_set_style_bg_grad_color(screen_aircraft, COLOR_BG_BOTTOM, 0);
+    lv_obj_set_style_bg_grad_dir(screen_aircraft, LV_GRAD_DIR_VER, 0);
     
     // Back button
     btn_back_home = lv_button_create(screen_aircraft);
     lv_obj_set_size(btn_back_home, 120, 50);
     lv_obj_align(btn_back_home, LV_ALIGN_TOP_LEFT, 20, 20);
     lv_obj_set_style_bg_color(btn_back_home, COLOR_CARD, 0);
+    lv_obj_set_style_border_color(btn_back_home, COLOR_CARD_BORDER, 0);
+    lv_obj_set_style_border_width(btn_back_home, 2, 0);
     lv_obj_add_event_cb(btn_back_home, event_btn_back_home, LV_EVENT_CLICKED, this);
     
     lv_obj_t* back_label = lv_label_create(btn_back_home);
@@ -378,7 +428,11 @@ void LVGLDisplayManager::build_aircraft_screen() {
     lv_obj_set_size(aircraft_card, 760, 370);
     lv_obj_align(aircraft_card, LV_ALIGN_CENTER, 0, 10);
     lv_obj_set_style_bg_color(aircraft_card, COLOR_CARD, 0);
-    lv_obj_set_style_border_width(aircraft_card, 0, 0);
+    lv_obj_set_style_border_color(aircraft_card, COLOR_CARD_BORDER, 0);
+    lv_obj_set_style_border_width(aircraft_card, 2, 0);
+    lv_obj_set_style_shadow_width(aircraft_card, 20, 0);
+    lv_obj_set_style_shadow_color(aircraft_card, lv_color_black(), 0);
+    lv_obj_set_style_shadow_opa(aircraft_card, LV_OPA_30, 0);
     lv_obj_set_style_radius(aircraft_card, 16, 0);
     lv_obj_set_style_pad_all(aircraft_card, 30, 0);
     
@@ -395,10 +449,24 @@ void LVGLDisplayManager::build_aircraft_screen() {
     lv_obj_set_style_text_color(label_aircraft_type, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_aircraft_type, "Aircraft Type");
     lv_obj_align(label_aircraft_type, LV_ALIGN_TOP_LEFT, 0, 70);
+
+    // Airline
+    label_airline = lv_label_create(aircraft_card);
+    lv_obj_set_style_text_font(label_airline, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(label_airline, COLOR_TEXT_PRIMARY, 0);
+    lv_label_set_text(label_airline, "Airline Name");
+    lv_obj_align(label_airline, LV_ALIGN_TOP_LEFT, 0, 95);
+
+    // Route
+    label_route = lv_label_create(aircraft_card);
+    lv_obj_set_style_text_font(label_route, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(label_route, COLOR_TEXT_SECONDARY, 0);
+    lv_label_set_text(label_route, "Origin -> Destination");
+    lv_obj_align(label_route, LV_ALIGN_TOP_LEFT, 0, 120);
     
     // Grid for metrics
-    int y_offset = 120;
-    int spacing = 60;
+    int y_offset = 160;
+    int spacing = 50;
     
     label_altitude = lv_label_create(aircraft_card);
     lv_obj_set_style_text_font(label_altitude, &lv_font_montserrat_20, 0);
@@ -434,13 +502,18 @@ void LVGLDisplayManager::build_aircraft_screen() {
 // Build no aircraft screen
 void LVGLDisplayManager::build_no_aircraft_screen() {
     screen_no_aircraft = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen_no_aircraft, COLOR_BACKGROUND, 0);
+    // Gradient Background
+    lv_obj_set_style_bg_color(screen_no_aircraft, COLOR_BG_TOP, 0);
+    lv_obj_set_style_bg_grad_color(screen_no_aircraft, COLOR_BG_BOTTOM, 0);
+    lv_obj_set_style_bg_grad_dir(screen_no_aircraft, LV_GRAD_DIR_VER, 0);
     
     // Back button
     lv_obj_t* btn_back = lv_button_create(screen_no_aircraft);
     lv_obj_set_size(btn_back, 120, 50);
     lv_obj_align(btn_back, LV_ALIGN_TOP_LEFT, 20, 20);
     lv_obj_set_style_bg_color(btn_back, COLOR_CARD, 0);
+    lv_obj_set_style_border_color(btn_back, COLOR_CARD_BORDER, 0);
+    lv_obj_set_style_border_width(btn_back, 2, 0);
     lv_obj_add_event_cb(btn_back, event_btn_back_home, LV_EVENT_CLICKED, this);
     
     lv_obj_t* back_label = lv_label_create(btn_back);
@@ -470,6 +543,16 @@ void LVGLDisplayManager::update_home_screen(const WeatherData& weather, int airc
     // Update weather description
     lv_label_set_text(label_weather_desc, weather.description.c_str());
     
+    // Update Feels Like
+    char feels_buf[32];
+    snprintf(feels_buf, sizeof(feels_buf), "Feels: %.0f°F", weather.feelsLike);
+    lv_label_set_text(label_feels_like, feels_buf);
+
+    // Update Temp Range
+    char range_buf[32];
+    snprintf(range_buf, sizeof(range_buf), "H: %.0f° L: %.0f°", weather.tempMax, weather.tempMin);
+    lv_label_set_text(label_temp_range, range_buf);
+    
     // Update humidity arc
     lv_arc_set_value(arc_humidity, (int)weather.humidity);
     char hum_buf[16];
@@ -485,6 +568,12 @@ void LVGLDisplayManager::update_home_screen(const WeatherData& weather, int airc
     char wind_buf[32];
     snprintf(wind_buf, sizeof(wind_buf), "Wind: %.0f mph", weather.windSpeed);
     lv_label_set_text(label_wind, wind_buf);
+    
+    // Update visibility
+    char vis_buf[32];
+    // Visibility is in meters, convert to miles (1 mi = 1609.34 m)
+    snprintf(vis_buf, sizeof(vis_buf), "Vis: %.1f mi", weather.visibility / 1609.34f);
+    lv_label_set_text(label_visibility, vis_buf);
     
     // Update sunrise/sunset
     char sunrise_buf[32];
@@ -517,6 +606,18 @@ void LVGLDisplayManager::update_aircraft_screen(const Aircraft& aircraft) {
     
     // Update aircraft type
     lv_label_set_text(label_aircraft_type, aircraft.aircraftType.c_str());
+
+    // Update airline
+    lv_label_set_text(label_airline, aircraft.airline.length() > 0 ? aircraft.airline.c_str() : "Unknown Airline");
+
+    // Update route
+    if (aircraft.origin.length() > 0 && aircraft.destination.length() > 0) {
+        char route_buf[64];
+        snprintf(route_buf, sizeof(route_buf), "%s -> %s", aircraft.origin.c_str(), aircraft.destination.c_str());
+        lv_label_set_text(label_route, route_buf);
+    } else {
+        lv_label_set_text(label_route, "Route Unknown");
+    }
     
     // Update altitude (m to ft)
     char alt_buf[64];

@@ -56,6 +56,9 @@ private:
     lv_obj_t* label_date;
     lv_obj_t* label_temperature;
     lv_obj_t* label_weather_desc;
+    lv_obj_t* label_feels_like;   // New
+    lv_obj_t* label_temp_range;   // New
+    lv_obj_t* label_visibility;   // New
     lv_obj_t* label_humidity;
     lv_obj_t* label_pressure;
     lv_obj_t* label_wind;
@@ -68,6 +71,8 @@ private:
     // Aircraft detail screen widgets
     lv_obj_t* label_callsign;
     lv_obj_t* label_aircraft_type;
+    lv_obj_t* label_airline;      // New
+    lv_obj_t* label_route;        // New
     lv_obj_t* label_altitude;
     lv_obj_t* label_velocity;
     lv_obj_t* label_heading;
