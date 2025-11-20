@@ -21,7 +21,9 @@ private:
     String city;
     String lastError;
     String buildUrl() const;
+    String buildForecastUrl() const;
     bool makeHttpRequestWithRetry(const String& url, String& response);
     bool makeHttpRequest(const String& url, String& response, int& httpCode);
     bool parseWeatherData(const String& jsonData, WeatherData& weather);
+    bool parseForecastData(const String& jsonData, WeatherData& weather);
 };

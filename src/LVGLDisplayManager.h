@@ -58,15 +58,22 @@ private:
     lv_obj_t* label_weather_desc;
     lv_obj_t* label_feels_like;   // New
     lv_obj_t* label_temp_range;   // New
-    lv_obj_t* label_visibility;   // New
     lv_obj_t* label_humidity;
-    lv_obj_t* label_pressure;
     lv_obj_t* label_wind;
     lv_obj_t* arc_humidity;
     lv_obj_t* label_sunrise;
     lv_obj_t* label_sunset;
     lv_obj_t* label_plane_count;
     lv_obj_t* btn_view_planes;
+    
+    // Forecast widgets
+    struct ForecastRow {
+        lv_obj_t* container;
+        lv_obj_t* label_day;
+        lv_obj_t* label_condition;
+        lv_obj_t* label_temp;
+    };
+    ForecastRow forecast_rows[5];
     
     // Aircraft detail screen widgets
     lv_obj_t* label_callsign;

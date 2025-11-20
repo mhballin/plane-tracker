@@ -3,6 +3,15 @@
 #pragma once
 #include <Arduino.h>
 
+#include <vector>
+
+struct DailyForecast {
+    String dayName;   // e.g., "Mon"
+    float tempMin;
+    float tempMax;
+    String condition; // e.g., "Clouds"
+};
+
 struct WeatherData {
     float temperature;
     float humidity;
@@ -16,6 +25,8 @@ struct WeatherData {
     String description;
     unsigned long sunrise; // epoch seconds
     unsigned long sunset;  // epoch seconds
+    
+    std::vector<DailyForecast> forecast;
     
     WeatherData() : 
         temperature(0), humidity(0), pressure(0),
