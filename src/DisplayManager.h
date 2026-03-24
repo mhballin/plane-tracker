@@ -221,6 +221,8 @@ private:
     void handleSwipeUp();
     void handleSwipeDown();
     bool detectSwipe(int& deltaX, int& deltaY);
+    void handleTap(int x, int y, unsigned long duration);
+    bool isTapGesture(int dx, int dy, unsigned long duration) const;
 
     // Utilities
     void setBacklight(uint8_t brightness);
