@@ -2,9 +2,9 @@
 // LVGL-based Display Manager Implementation
 #include "LVGLDisplayManager.h"
 #include "config/Config.h"
+#include "hal/ElecrowDisplayProfile.h"
 #include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
-#include <driver/i2c.h>
 
 // Define LGFX class with Elecrow 5" RGB panel configuration
 class LGFX_Panel : public lgfx::LGFX_Device {
@@ -18,8 +18,10 @@ public:
         // Configure panel
         {
             auto cfg = _panel_instance.config();
-            cfg.memory_width = 800; cfg.memory_height = 480;
-            cfg.panel_width = 800; cfg.panel_height = 480;
+            cfg.memory_width = hal::Elecrow5Inch::PANEL_WIDTH;
+            cfg.memory_height = hal::Elecrow5Inch::PANEL_HEIGHT;
+            cfg.panel_width = hal::Elecrow5Inch::PANEL_WIDTH;
+            cfg.panel_height = hal::Elecrow5Inch::PANEL_HEIGHT;
             cfg.offset_x = 0; cfg.offset_y = 0;
             _panel_instance.config(cfg);
         }
@@ -27,7 +29,7 @@ public:
         // Enable PSRAM
         {
             auto cfg = _panel_instance.config_detail();
-            cfg.use_psram = 2;
+            cfg.use_psram = hal::Elecrow5Inch::USE_PSRAM_FRAMEBUFFER;
             _panel_instance.config_detail(cfg);
         }
         
@@ -35,20 +37,38 @@ public:
         {
             auto cfg = _bus_instance.config();
             cfg.panel = &_panel_instance;
-            cfg.pin_d0 = GPIO_NUM_8; cfg.pin_d1 = GPIO_NUM_3; cfg.pin_d2 = GPIO_NUM_46;
-            cfg.pin_d3 = GPIO_NUM_9; cfg.pin_d4 = GPIO_NUM_1; cfg.pin_d5 = GPIO_NUM_5;
-            cfg.pin_d6 = GPIO_NUM_6; cfg.pin_d7 = GPIO_NUM_7; cfg.pin_d8 = GPIO_NUM_15;
-            cfg.pin_d9 = GPIO_NUM_16; cfg.pin_d10 = GPIO_NUM_4; cfg.pin_d11 = GPIO_NUM_45;
-            cfg.pin_d12 = GPIO_NUM_48; cfg.pin_d13 = GPIO_NUM_47; cfg.pin_d14 = GPIO_NUM_21;
-            cfg.pin_d15 = GPIO_NUM_14;
-            cfg.pin_henable = GPIO_NUM_40; cfg.pin_vsync = GPIO_NUM_41;
-            cfg.pin_hsync = GPIO_NUM_39; cfg.pin_pclk = GPIO_NUM_0;
-            cfg.freq_write = 15000000;
-            cfg.hsync_polarity = 0; cfg.hsync_front_porch = 8;
-            cfg.hsync_pulse_width = 4; cfg.hsync_back_porch = 43;
-            cfg.vsync_polarity = 0; cfg.vsync_front_porch = 8;
-            cfg.vsync_pulse_width = 4; cfg.vsync_back_porch = 12;
-            cfg.pclk_active_neg = 1; cfg.de_idle_high = 0; cfg.pclk_idle_high = 0;
+            cfg.pin_d0 = hal::Elecrow5Inch::PIN_D0;
+            cfg.pin_d1 = hal::Elecrow5Inch::PIN_D1;
+            cfg.pin_d2 = hal::Elecrow5Inch::PIN_D2;
+            cfg.pin_d3 = hal::Elecrow5Inch::PIN_D3;
+            cfg.pin_d4 = hal::Elecrow5Inch::PIN_D4;
+            cfg.pin_d5 = hal::Elecrow5Inch::PIN_D5;
+            cfg.pin_d6 = hal::Elecrow5Inch::PIN_D6;
+            cfg.pin_d7 = hal::Elecrow5Inch::PIN_D7;
+            cfg.pin_d8 = hal::Elecrow5Inch::PIN_D8;
+            cfg.pin_d9 = hal::Elecrow5Inch::PIN_D9;
+            cfg.pin_d10 = hal::Elecrow5Inch::PIN_D10;
+            cfg.pin_d11 = hal::Elecrow5Inch::PIN_D11;
+            cfg.pin_d12 = hal::Elecrow5Inch::PIN_D12;
+            cfg.pin_d13 = hal::Elecrow5Inch::PIN_D13;
+            cfg.pin_d14 = hal::Elecrow5Inch::PIN_D14;
+            cfg.pin_d15 = hal::Elecrow5Inch::PIN_D15;
+            cfg.pin_henable = hal::Elecrow5Inch::PIN_HENABLE;
+            cfg.pin_vsync = hal::Elecrow5Inch::PIN_VSYNC;
+            cfg.pin_hsync = hal::Elecrow5Inch::PIN_HSYNC;
+            cfg.pin_pclk = hal::Elecrow5Inch::PIN_PCLK;
+            cfg.freq_write = hal::Elecrow5Inch::RGB_FREQ_WRITE;
+            cfg.hsync_polarity = hal::Elecrow5Inch::HSYNC_POLARITY;
+            cfg.hsync_front_porch = hal::Elecrow5Inch::HSYNC_FRONT_PORCH;
+            cfg.hsync_pulse_width = hal::Elecrow5Inch::HSYNC_PULSE_WIDTH;
+            cfg.hsync_back_porch = hal::Elecrow5Inch::HSYNC_BACK_PORCH;
+            cfg.vsync_polarity = hal::Elecrow5Inch::VSYNC_POLARITY;
+            cfg.vsync_front_porch = hal::Elecrow5Inch::VSYNC_FRONT_PORCH;
+            cfg.vsync_pulse_width = hal::Elecrow5Inch::VSYNC_PULSE_WIDTH;
+            cfg.vsync_back_porch = hal::Elecrow5Inch::VSYNC_BACK_PORCH;
+            cfg.pclk_active_neg = hal::Elecrow5Inch::PCLK_ACTIVE_NEG;
+            cfg.de_idle_high = hal::Elecrow5Inch::DE_IDLE_HIGH;
+            cfg.pclk_idle_high = hal::Elecrow5Inch::PCLK_IDLE_HIGH;
             _bus_instance.config(cfg);
         }
         _panel_instance.setBus(&_bus_instance);
@@ -56,7 +76,7 @@ public:
         // Configure backlight
         {
             auto cfg = _light_instance.config();
-            cfg.pin_bl = GPIO_NUM_2;
+            cfg.pin_bl = hal::Elecrow5Inch::PIN_BACKLIGHT;
             _light_instance.config(cfg);
         }
         _panel_instance.light(&_light_instance);
@@ -64,10 +84,18 @@ public:
         // Configure touch (GT911)
         {
             auto cfg = _touch_instance.config();
-            cfg.x_min = 0; cfg.x_max = 800; cfg.y_min = 0; cfg.y_max = 480;
-            cfg.i2c_addr = 0x14; cfg.pin_sda = GPIO_NUM_19; cfg.pin_scl = GPIO_NUM_20;
-            cfg.pin_int = GPIO_NUM_NC; cfg.pin_rst = GPIO_NUM_NC;
-            cfg.i2c_port = 1; cfg.freq = 400000; cfg.bus_shared = false;
+            cfg.x_min = 0;
+            cfg.x_max = hal::Elecrow5Inch::PANEL_WIDTH;
+            cfg.y_min = 0;
+            cfg.y_max = hal::Elecrow5Inch::PANEL_HEIGHT;
+            cfg.i2c_addr = hal::Elecrow5Inch::TOUCH_I2C_ADDR;
+            cfg.pin_sda = hal::Elecrow5Inch::TOUCH_PIN_SDA;
+            cfg.pin_scl = hal::Elecrow5Inch::TOUCH_PIN_SCL;
+            cfg.pin_int = hal::Elecrow5Inch::TOUCH_PIN_INT;
+            cfg.pin_rst = hal::Elecrow5Inch::TOUCH_PIN_RST;
+            cfg.i2c_port = hal::Elecrow5Inch::TOUCH_I2C_PORT;
+            cfg.freq = hal::Elecrow5Inch::TOUCH_I2C_FREQ;
+            cfg.bus_shared = false;
             _touch_instance.config(cfg);
             _panel_instance.setTouch(&_touch_instance);
         }
@@ -76,7 +104,7 @@ public:
 };
 
 // Define buffer sizes for LVGL
-#define LVGL_BUFFER_SIZE (800 * 40)  // 40 lines buffer
+#define LVGL_BUFFER_SIZE (hal::Elecrow5Inch::PANEL_WIDTH * 40)  // 40 lines buffer
 
 // Static instance for callbacks
 static LVGLDisplayManager* s_instance = nullptr;
@@ -155,7 +183,7 @@ bool LVGLDisplayManager::initialize() {
     }
     
     lcd->init();
-    lcd->setRotation(2);
+    lcd->setRotation(hal::Elecrow5Inch::PANEL_ROTATION);
     lcd->setBrightness(currentBrightness);
     lcd->fillScreen(TFT_BLACK);
     
@@ -172,7 +200,7 @@ bool LVGLDisplayManager::initialize() {
     }
     
     // Create LVGL display
-    lv_display = lv_display_create(800, 480);
+    lv_display = lv_display_create(hal::Elecrow5Inch::PANEL_WIDTH, hal::Elecrow5Inch::PANEL_HEIGHT);
     lv_display_set_flush_cb(lv_display, flush_cb);
     lv_display_set_buffers(lv_display, buf1, buf2, LVGL_BUFFER_SIZE * sizeof(lv_color_t), LV_DISPLAY_RENDER_MODE_PARTIAL);
     

@@ -1,94 +1,242 @@
-Plane-Tracker — quick dev guide
+# Plane Tracker
 
-This project targets an ESP32-S3 with an Elecrow 5" HMI display (LovyanGFX).
+An ESP32-S3 firmware project that displays real-time weather and nearby aircraft tracking data on a 5" RGB display. This is a hobby project for aviation enthusiasts who want to monitor local airspace directly on their desk.
 
-Quick setup (macOS / zsh)
+**Current Status:** v4 architecture rewrite in progress—modernizing the codebase for maintainability and extensibility.
 
-1) Install PlatformIO Core (recommended):
+---
 
-```bash
-python3 -m pip install --user pipx
-python3 -m pipx ensurepath
-# restart your terminal, then:
-python3 -m pipx install platformio
-```
+## Features
 
-Verify:
+- **Live Aircraft Tracking**: Pulls nearby aircraft from OpenSky Network within a configurable bounding box
+- **Local Weather**: Real-time temperature, humidity, and conditions from OpenWeather API
+- **Touch Interface**: Capacitive touch gestures to browse aircraft details and adjust brightness
+- **Night Mode**: Auto-dims display during configured hours to avoid light pollution
+- **Web Dashboard**: Local HTTP status dashboard showing telemetry and live data
+- **Modular Architecture**: Clean separation between core orchestration, services, and UI layers
 
-```bash
-pio --version
-```
+---
 
-2) Build, upload, monitor (from project root):
+## Hardware
 
+- **Microcontroller**: ESP32-S3
+- **Display**: Elecrow 5" RGB panel (800×480) with GT911 capacitive touch
+- **Build System**: PlatformIO + Arduino framework
+- **UI Framework**: LVGL v9.4.0 (for UI rendering), LovyanGFX v1.1.16 (display driver)
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+1. **PlatformIO CLI** installed ([docs](https://docs.platformio.org/))
+2. **Clone this repository** locally
+3. **API Credentials** (see Configuration section below)
+
+### Setup
+
+1. Copy the configuration template:
+   ```bash
+   cp src/config/Config.example.h src/config/Config.h
+   ```
+
+2. Edit `src/config/Config.h` with your credentials and location:
+   - WiFi SSID and password
+   - OpenWeather API key (get one free at [openweathermap.org](https://openweathermap.org/api))
+   - OpenSky Network OAuth credentials (register at [opensky-network.org](https://opensky-network.org/))
+   - Location coordinates (latitude/longitude)
+
+3. **Deploy** to the ESP32-S3:
+   ```bash
+   pio run -e full -t upload
+   pio device monitor -b 115200
+   ```
+
+### Build Environments
+
+**Full Application** (with all services):
 ```bash
 pio run -e full
 pio run -e full -t upload
+```
+
+**Display Smoke Test** (LVGL + hardware only, no services):
+```bash
+pio run -e smoke-test -t upload
+```
+
+---
+
+## Architecture
+
+The rewrite introduces a modular core orchestration system:
+
+```
+src/
+├── core/
+│   ├── App.h/.cpp                    # Main orchestrator & lifecycle
+│   ├── Scheduler.h/.cpp              # Non-blocking periodic task scheduler
+│   └── HealthMonitor.h/.cpp          # System telemetry (uptime, memory, WiFi)
+├── hal/
+│   └── ElecrowDisplayProfile.h       # Hardware constants (pins, timing, I2C)
+├── web/
+│   └── WebDashboard.h/.cpp           # Local HTTP server & status endpoints
+├── services/
+│   ├── OpenSkyService.h/.cpp         # Aircraft API client
+│   └── WeatherService.h/.cpp         # Weather API client
+├── models/
+│   ├── Aircraft.h                    # Aircraft telemetry struct
+│   └── WeatherData.h                 # Weather data struct
+├── LVGLDisplayManager.h/.cpp         # LVGL screen rendering & touch handling
+└── main.cpp                          # Minimal bootstrap
+```
+
+### Key Design Patterns
+
+- **Hardware Abstraction Layer (HAL)**: All GPIO pins and timing constants live in `hal/ElecrowDisplayProfile.h`—one source of truth for board-specific config
+- **Non-blocking Scheduler**: `core::Scheduler` manages up to 12 independent timers (weather polls, aircraft updates, display refresh) without blocking
+- **App Orchestrator**: `core::App` coordinates lifecycle, WiFi connection, services, and periodic task dispatch
+- **Health Monitoring**: `core::HealthMonitor` tracks system metrics for diagnostic dashboards
+
+---
+
+## Configuration
+
+Edit `src/config/Config.h` (copy from `Config.example.h`) to customize:
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| `WEATHER_UPDATE_INTERVAL` | 30 min | How often to fetch weather |
+| `PLANE_UPDATE_INTERVAL` | 60 sec | How often to fetch aircraft data |
+| `VISIBILITY_RANGE` | ~13 km | Search radius for nearby aircraft |
+| `HOME_LAT` / `HOME_LON` | Portland, ME | Center of tracking bounding box |
+| `BRIGHTNESS_HIGH` / `BRIGHTNESS_LOW` | 150 / 50 | Day/night brightness levels |
+| `NIGHT_START_HOUR` / `NIGHT_END_HOUR` | 22 / 6 | Auto-dim schedule |
+
+**⚠️ Security Note**: `src/config/Config.h` **must never be committed** to version control—it contains API keys and WiFi credentials. The file is excluded by `.gitignore`. Always work from the example template.
+
+---
+
+## Web Dashboard
+
+Once the device connects to WiFi, access the local dashboard:
+
+- **Status Page**: `http://<device-ip>/`
+- **JSON API**: `http://<device-ip>/api/status`
+
+The dashboard displays:
+- Live aircraft count
+- Current temperature and weather condition
+- System uptime and memory usage
+- WiFi signal strength
+
+---
+
+## Roadmap (v4 Rewrite)
+
+- ✅ **Phase 0–5 (Done)**: Core orchestrator, scheduler, HAL extraction, web skeleton
+- 🔄 **Phase 6 (Next)**: Full web settings UI with persistence (Wi-Fi, API keys, location, intervals)
+- 🔄 **Phase 7**: Runtime configuration management and NVS storage integration
+- 🔄 **Phase 8**: UI redesign, legacy code removal, final documentation
+
+See [vision.md](docs/vision.md) and [rapid-iteration.md](docs/rapid-iteration.md) for detailed project vision and development philosophy.
+
+---
+
+## Development
+
+### Serial Debugging
+
+The firmware logs to serial console when `DEBUG_SERIAL = true` in Config.h:
+
+```bash
 pio device monitor -b 115200
 ```
 
-3) VS Code tasks
+### Touch Diagnostics
 
-Open the Command Palette (Cmd+Shift+P) -> Tasks: Run Task -> choose one of:
-- PlatformIO: Build
-- PlatformIO: Upload
-- PlatformIO: Monitor
+Type `RAW` in the serial monitor to toggle raw touch coordinate dump (useful for calibration).
 
-Environments
-------------
-- `full` (default): entire application stack (Wi-Fi + OpenSky + weather).
-- `smoke-test`: adds `-DSMOKE_TEST` so you can tune display/touch without hitting the network. Run with `pio run -e smoke-test -t upload` when iterating on UI only.
+### I2C Enumeration
 
-See `docs/rapid-iteration.md` for more tips on speeding up the edit→flash loop.
+Type `I2CSCAN` to enumerate connected I2C devices (run only before display initialization).
 
-If VS Code can't find `pio`, make sure you restarted VS Code after installing PlatformIO or add the install location (`~/.local/bin` or `~/.local/pipx/bin`) to your PATH in `~/.zshrc`.
+---
 
-Preparing for GitHub / secrets
-------------------------------
-1. Copy the sanitized config template before your first build:
+## Important Notes
 
-	```bash
-	cp src/config/Config.example.h src/config/Config.h
-	```
+### Hardware Configuration
 
-2. Fill in Wi-Fi, OpenWeather, and OpenSky credentials inside `Config.h`. This file stays local only.
-3. `src/config/Config.h`, `.pio/`, and `logs/*.log` are already ignored by `.gitignore`. Double-check with `git status -u` to ensure no secrets are staged.
-4. If you ever committed real keys in another repo, rotate them before pushing here.
-5. When you’re ready to publish to a private GitHub repo:
+- **RGB Panel Pins**: 16 data lines (GPIO 0–15), H-enable, V-sync, H-sync, pixel clock
+- **Touch I2C**: GT911 at address 0x14 on I2C1 (SDA GPIO 19 / SCL GPIO 20)
+- **PSRAM Framebuffer**: Required for LVGL rendering at 800×480; enabled by default
+- **Write Frequency**: 15 MHz (tuned for Elecrow panel; do not change without testing)
 
-	```bash
-	git init
-	git add .
-	git commit -m "Initial commit: Plane-Tracker"
-	git remote add origin git@github.com:YOUR_USER/plane-tracker.git
-	git branch -M main
-	git push -u origin main
-	```
+All hardware-specific constants are centralized in `src/hal/ElecrowDisplayProfile.h`. Do not modify these without hardware validation.
 
-Notes
+### API Services
 
-- Do not commit real API keys. Use `src/config/Config.example.h` as a template.
-- The display code uses LovyanGFX with PSRAM for the framebuffer. Ensure PSRAM is enabled on your board.
+- **OpenWeather**: Free tier allows ~1,000 requests/day; weather updates every 30 minutes by default
+- **OpenSky Network**: Free tier allows state vector queries; aircraft updates every 60 seconds by default
 
-Display tuning & color calibration
----------------------------------
-If your Elecrow 5" HMI looks tinted (too blue or too warm), run the smoke test to cycle full-screen red/green/blue so you can see which channels are weak or inverted.
+Be mindful of rate limits when adjusting update intervals.
 
-How to run the smoke test:
+---
 
-1. Build with the `SMOKE_TEST` macro defined. In PlatformIO you can add `-DSMOKE_TEST` to build flags or temporarily modify `platformio.ini`.
+## Building & Contributing
 
-2. Upload and open the serial monitor. The smoke test will cycle RED -> GREEN -> BLUE full-screen so you can visually inspect channel balance.
+This project uses **PlatformIO** for builds and dependency management. VS Code tasks are pre-configured:
 
-Tuning knobs to try (in `src/DisplayManager.h` inside LGFX constructor):
+- `PlatformIO: Build` — Compile the firmware
+- `PlatformIO: Upload` — Deploy to device
+- `PlatformIO: Monitor` — Open serial console
 
-- `cfg.pclk_active_neg` (0 or 1): try flipping this if colors look swapped or phase-shifted.
-- `cfg.freq_write`: try 12000000 (12MHz) or 10000000 (10MHz) depending on stability; higher freq may change color rendering.
-- `cfg.hsync_front_porch`, `cfg.hsync_pulse_width`, `cfg.hsync_back_porch`, and the `vsync_*` values: small adjustments can fix timing artifacts.
-- `cfg.pin_d* / pin_r* / pin_g*` mappings: ensure they match your board/wiring (the default is from the Elecrow example).
-- Backlight: `lcd->setBrightness(value)` — reducing brightness can hide tint but won't fix color balance.
+Fork, branch, and submit PRs following Arduino coding conventions in the existing codebase. When adding new features, maintain the modular architecture—services should remain isolated from UI logic.
 
-If cycling the colors reveals a weak channel (e.g., blue is dim), try toggling `cfg.pclk_active_neg` and toggling `cfg.freq_write` between 10MHz and 12MHz. After each change, rebuild and re-run the smoke test.
+---
 
-If you want, I can add a small runtime setting to toggle `pclk_active_neg` at boot via a button or serial command so you can try both without rebuilding.
+## License
 
+[Add your license here, e.g., MIT, GPL-3.0]
+
+---
+
+## Questions?
+
+- Check [vision.md](docs/vision.md) for project philosophy
+- Review [rapid-iteration.md](docs/rapid-iteration.md) for development workflow
+- Inspect serial logs (`logs/` directory) for boot diagnostics
+- Consult official docs: [PlatformIO](https://docs.platformio.org/), [LovyanGFX](https://github.com/lovyan03/LovyanGFX), [LVGL](https://lvgl.io/)
+- open `http://<device-ip>/api/status` for JSON status
+
+Current dashboard is intentionally minimal and read-focused while the full settings flow is being implemented.
+
+## Configuration and Secrets
+
+1. Copy config template:
+
+```bash
+cp src/config/Config.example.h src/config/Config.h
+```
+
+2. Fill in local credentials and location values in `Config.h`.
+3. Never commit real credentials.
+
+Expected gitignore behavior:
+
+- `src/config/Config.h` should remain untracked
+- logs and build artifacts should remain untracked
+
+## Notes for Contributors During Rewrite
+
+- Prefer adding new functionality under `src/core`, `src/hal`, `src/web`, `src/services`.
+- Keep UI changes inside LVGL display manager until UI module extraction is complete.
+- Keep memory behavior conservative (single aircraft array allocation; avoid frequent heap churn).
+- Build after each structural change.
+
+## Immediate Next Milestone
+
+- Add full web settings endpoints and persistence (Wi-Fi/API/location/timing)
+- Integrate runtime config updates into core scheduler and services
+- Continue migration off legacy display path
