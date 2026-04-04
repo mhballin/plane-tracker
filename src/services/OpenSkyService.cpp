@@ -24,12 +24,15 @@ static const struct { const char* prefix; const char* airline; } kAirlineTable[]
     { "NKS", "Spirit Airlines"   },
 };
 
-static const struct { const char* prefix; const char* type; } kTypeTable[] = {
+static const struct { const char* prefix; const char* aircraftType; } kTypeTable[] = {
     { "AAL", "Commercial Jet" },
     { "DAL", "Commercial Jet" },
     { "UAL", "Commercial Jet" },
     { "SWA", "Commercial Jet" },
     { "JBU", "Commercial Jet" },
+    { "ASA", "Commercial Jet" },
+    { "FFT", "Commercial Jet" },
+    { "NKS", "Commercial Jet" },
     { "FDX", "Cargo Aircraft" },
     { "UPS", "Cargo Aircraft" },
 };
@@ -224,7 +227,7 @@ String OpenSkyService::guessAircraftType(const String& callsign) {
 
     String prefix = callsign.substring(0, 3);
     for (const auto& entry : kTypeTable) {
-        if (prefix == entry.prefix) return entry.type;
+        if (prefix == entry.prefix) return entry.aircraftType;
     }
     return "Aircraft";
 }
