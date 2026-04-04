@@ -5,6 +5,7 @@
 #include "LVGLDisplayManager.h"
 #include "core/HealthMonitor.h"
 #include "core/Scheduler.h"
+#include "core/WiFiManager.h"
 #include "models/Aircraft.h"
 #include "models/WeatherData.h"
 #include "services/OpenSkyService.h"
@@ -22,7 +23,6 @@ public:
     void tick();
 
 private:
-    bool connectWiFi();
     void setupTasks();
 
     void updateWeather();
@@ -43,6 +43,7 @@ private:
     WeatherData currentWeather_;
     Scheduler scheduler_;
     HealthMonitor health_;
+    WiFiManager wifiManager_;
 
     int currentAircraftCount_;
     int currentAircraftIndex_;

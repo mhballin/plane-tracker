@@ -1,8 +1,6 @@
 #include "core/App.h"
 
 #include <Wire.h>
-#include <WiFi.h>
-#include <time.h>
 
 #include "config/Config.h"
 
@@ -24,8 +22,7 @@ App::App()
     , displayTaskId_(Scheduler::INVALID_TASK)
     , healthTaskId_(Scheduler::INVALID_TASK)
     , serialBuffer_("")
-    , rawTouchMode_(false)
-    , lastWifiReconnectMs_(0) {
+    , rawTouchMode_(false) {
 }
 
 App::~App() {
@@ -60,12 +57,9 @@ bool App::begin() {
     }
 
     display_->setStatusMessage("Connecting WiFi...");
-    if (!connectWiFi()) {
+    if (!wifiManager_.connect()) {
         display_->setStatusMessage("WiFi failed - retrying...");
         Serial.println("[WiFi] Initial connection failed; will retry in tick()");
-        // Don't halt — services will be skipped until WiFi is up
-    } else {
-        configTime(Config::GMT_OFFSET_SEC, Config::DAYLIGHT_OFFSET_SEC, Config::NTP_SERVER);
     }
 
     openSkyService_ = new OpenSkyService();
@@ -110,18 +104,10 @@ void App::tick() {
     processRawTouchDump();
     applyNightMode();
 
-    // Reconnect WiFi if dropped; retry at most every 30 seconds
-    if (WiFi.status() != WL_CONNECTED) {
-        if ((now - lastWifiReconnectMs_) >= Config::WIFI_RECONNECT_INTERVAL) {
-            lastWifiReconnectMs_ = now;
-            Serial.println("[WiFi] Disconnected — attempting reconnect");
-            if (display_) display_->setStatusMessage("WiFi reconnecting...");
-            if (connectWiFi()) {
-                configTime(Config::GMT_OFFSET_SEC, Config::DAYLIGHT_OFFSET_SEC, Config::NTP_SERVER);
-                if (openSkyService_) openSkyService_->initialize();
-                if (display_) display_->setStatusMessage("WiFi reconnected");
-            }
-        }
+    wifiManager_.tick(now);
+    if (wifiManager_.justReconnected()) {
+        if (display_) display_->setStatusMessage("WiFi reconnected");
+        if (openSkyService_) openSkyService_->initialize();
     }
 
     if (display_) {
@@ -175,26 +161,6 @@ void App::tick() {
     delay(Config::TICK_DELAY_MS);
 }
 
-bool App::connectWiFi() {
-    Serial.printf("[WiFi] Connecting to SSID: \"%s\"\n", Config::WIFI_SSID);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(Config::WIFI_SSID, Config::WIFI_PASSWORD);
-
-    uint32_t started = millis();
-    while (WiFi.status() != WL_CONNECTED) {
-        if ((millis() - started) > Config::WIFI_TIMEOUT_MS) {
-            Serial.println("[WiFi] Connection timeout");
-            health_.setStatusMessage("WiFi timeout");
-            return false;
-        }
-        delay(300);
-    }
-
-    Serial.printf("[WiFi] Connected: %s\n", WiFi.localIP().toString().c_str());
-    health_.setStatusMessage("WiFi connected");
-    return true;
-}
-
 void App::setupTasks() {
     weatherTaskId_ = scheduler_.addTask(Config::WEATHER_UPDATE_INTERVAL, false);
     aircraftTaskId_ = scheduler_.addTask(Config::PLANE_UPDATE_INTERVAL, false);
@@ -203,7 +169,7 @@ void App::setupTasks() {
 }
 
 void App::updateWeather() {
-    if (!weatherService_ || WiFi.status() != WL_CONNECTED) {
+    if (!weatherService_ || !wifiManager_.isConnected()) {
         return;
     }
 
@@ -225,7 +191,7 @@ void App::updateWeather() {
 }
 
 void App::updateAircraft() {
-    if (!openSkyService_ || !aircraftList_ || WiFi.status() != WL_CONNECTED) {
+    if (!openSkyService_ || !aircraftList_ || !wifiManager_.isConnected()) {
         currentAircraftCount_ = 0;
         health_.setAircraftCount(0);
         return;
