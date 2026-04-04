@@ -10,6 +10,30 @@ namespace {
     constexpr uint16_t HTTP_TIMEOUT_MS = 12000;
 }
 
+// Lookup tables for callsign-prefix → airline/type guessing
+static const struct { const char* prefix; const char* airline; } kAirlineTable[] = {
+    { "AAL", "American Airlines" },
+    { "DAL", "Delta Air Lines"   },
+    { "UAL", "United Airlines"   },
+    { "SWA", "Southwest Airlines"},
+    { "JBU", "JetBlue Airways"   },
+    { "FDX", "FedEx"             },
+    { "UPS", "UPS Airlines"      },
+    { "ASA", "Alaska Airlines"   },
+    { "FFT", "Frontier Airlines" },
+    { "NKS", "Spirit Airlines"   },
+};
+
+static const struct { const char* prefix; const char* type; } kTypeTable[] = {
+    { "AAL", "Commercial Jet" },
+    { "DAL", "Commercial Jet" },
+    { "UAL", "Commercial Jet" },
+    { "SWA", "Commercial Jet" },
+    { "JBU", "Commercial Jet" },
+    { "FDX", "Cargo Aircraft" },
+    { "UPS", "Cargo Aircraft" },
+};
+
 OpenSkyService::OpenSkyService() : tokenExpiryTime(0), lastError("") {}
 
 // ========================================
@@ -195,27 +219,13 @@ int OpenSkyService::fetchAircraft(Aircraft* aircraftList, int maxAircraft) {
 // Quick Aircraft Type Guess (from callsign)
 // ========================================
 String OpenSkyService::guessAircraftType(const String& callsign) {
-    // Commercial airlines typically have 3-letter codes
-    if (callsign.length() >= 3) {
-        String prefix = callsign.substring(0, 3);
-        
-        // Check for common airline patterns
-        if (prefix == "AAL" || prefix == "DAL" || prefix == "UAL" || 
-            prefix == "SWA" || prefix == "JBU") {
-            return "Commercial Jet";
-        }
-        
-        // Cargo carriers
-        if (prefix == "FDX" || prefix == "UPS") {
-            return "Cargo Aircraft";
-        }
+    if (callsign.startsWith("N")) return "Private Aircraft";
+    if (callsign.length() < 3) return "Aircraft";
+
+    String prefix = callsign.substring(0, 3);
+    for (const auto& entry : kTypeTable) {
+        if (prefix == entry.prefix) return entry.type;
     }
-    
-    // US registration numbers start with N
-    if (callsign.startsWith("N")) {
-        return "Private Aircraft";
-    }
-    
     return "Aircraft";
 }
 
@@ -223,24 +233,12 @@ String OpenSkyService::guessAircraftType(const String& callsign) {
 // Quick Airline Guess (from callsign)
 // ========================================
 String OpenSkyService::guessAirline(const String& callsign) {
-    if (callsign.length() < 3) return "Unknown";
-    
-    String prefix = callsign.substring(0, 3);
-    
-    // Common US airlines
-    if (prefix == "AAL") return "American Airlines";
-    if (prefix == "DAL") return "Delta Air Lines";
-    if (prefix == "UAL") return "United Airlines";
-    if (prefix == "SWA") return "Southwest Airlines";
-    if (prefix == "JBU") return "JetBlue Airways";
-    if (prefix == "FDX") return "FedEx";
-    if (prefix == "UPS") return "UPS Airlines";
-    if (prefix == "ASA") return "Alaska Airlines";
-    if (prefix == "FFT") return "Frontier Airlines";
-    if (prefix == "NKS") return "Spirit Airlines";
-    
-    // Private aircraft
     if (callsign.startsWith("N")) return "Private";
-    
+    if (callsign.length() < 3) return "Unknown";
+
+    String prefix = callsign.substring(0, 3);
+    for (const auto& entry : kAirlineTable) {
+        if (prefix == entry.prefix) return entry.airline;
+    }
     return "Airline";
 }
