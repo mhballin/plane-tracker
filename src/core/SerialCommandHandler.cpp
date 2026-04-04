@@ -1,5 +1,6 @@
 // src/core/SerialCommandHandler.cpp
 #include "core/SerialCommandHandler.h"
+#include "hal/ElecrowDisplayProfile.h"
 #include <Wire.h>
 
 namespace core {
@@ -44,9 +45,12 @@ void SerialCommandHandler::dispatch(const String& command) {
 
 void SerialCommandHandler::runI2CScan() {
     Serial.println("[CMD] Running I2C scan");
+    // Wire.end() tears down the bus (including touch controller). This is a
+    // diagnostic-only command; the display driver reinitialises touch on next
+    // use via its own state, so this is safe for a one-shot scan.
     Wire.end();
-    Wire.begin(19, 20);
-    Wire.setClock(400000);
+    Wire.begin(hal::Elecrow5Inch::TOUCH_PIN_SDA, hal::Elecrow5Inch::TOUCH_PIN_SCL);
+    Wire.setClock(hal::Elecrow5Inch::TOUCH_I2C_FREQ);
     int found = 0;
     for (uint8_t address = 1; address < 127; ++address) {
         Wire.beginTransmission(address);
