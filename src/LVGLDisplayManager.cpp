@@ -256,100 +256,84 @@ void LVGLDisplayManager::touchpad_read(lv_indev_t* indev, lv_indev_data_t* data)
 }
 
 // Build home screen with modern card-based layout
-void LVGLDisplayManager::build_home_screen() {
-    screen_home = lv_obj_create(NULL);
-    // Gradient Background (Hides LCD backlight bleed)
-    lv_obj_set_style_bg_color(screen_home, COLOR_BG_TOP, 0);
-    lv_obj_set_style_bg_grad_color(screen_home, COLOR_BG_BOTTOM, 0);
-    lv_obj_set_style_bg_grad_dir(screen_home, LV_GRAD_DIR_VER, 0);
-    
-    // Top bar with time/date
-    lv_obj_t* top_bar = lv_obj_create(screen_home);
-    lv_obj_set_size(top_bar, 800, 80);
+void LVGLDisplayManager::buildTopBar(lv_obj_t* screen) {
+    lv_obj_t* top_bar = lv_obj_create(screen);
+    lv_obj_set_size(top_bar, hal::Elecrow5Inch::PANEL_WIDTH, 80);
     lv_obj_align(top_bar, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_opa(top_bar, LV_OPA_TRANSP, 0); // Transparent background
+    lv_obj_set_style_bg_opa(top_bar, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(top_bar, 0, 0);
     lv_obj_set_style_radius(top_bar, 0, 0);
-    
+
     label_time = lv_label_create(top_bar);
     lv_obj_set_style_text_font(label_time, &lv_font_montserrat_32, 0);
     lv_obj_set_style_text_color(label_time, COLOR_TEXT_PRIMARY, 0);
     lv_label_set_text(label_time, "00:00");
     lv_obj_align(label_time, LV_ALIGN_LEFT_MID, 20, -5);
-    
+
     label_date = lv_label_create(top_bar);
     lv_obj_set_style_text_font(label_date, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label_date, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_date, "Mon, Jan 1");
     lv_obj_align(label_date, LV_ALIGN_LEFT_MID, 20, 20);
-    
-    // Weather card (left side)
-    lv_obj_t* weather_card = lv_obj_create(screen_home);
+}
+
+void LVGLDisplayManager::buildWeatherCard(lv_obj_t* screen) {
+    lv_obj_t* weather_card = lv_obj_create(screen);
     lv_obj_set_size(weather_card, 480, 320);
     lv_obj_align(weather_card, LV_ALIGN_TOP_LEFT, 20, 100);
     lv_obj_set_style_bg_color(weather_card, COLOR_CARD, 0);
-    lv_obj_set_style_border_color(weather_card, COLOR_CARD_BORDER, 0); // Add border
-    lv_obj_set_style_border_width(weather_card, 2, 0);                 // 2px border
-    lv_obj_set_style_shadow_width(weather_card, 20, 0);                // Soft shadow
+    lv_obj_set_style_border_color(weather_card, COLOR_CARD_BORDER, 0);
+    lv_obj_set_style_border_width(weather_card, 2, 0);
+    lv_obj_set_style_shadow_width(weather_card, 20, 0);
     lv_obj_set_style_shadow_color(weather_card, lv_color_black(), 0);
     lv_obj_set_style_shadow_opa(weather_card, LV_OPA_30, 0);
     lv_obj_set_style_radius(weather_card, 16, 0);
     lv_obj_set_style_pad_all(weather_card, 20, 0);
-    
-    // --- Left Column: Current Weather ---
-    
-    // Temperature (large)
+
     label_temperature = lv_label_create(weather_card);
     lv_obj_set_style_text_font(label_temperature, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_color(label_temperature, COLOR_TEXT_PRIMARY, 0);
     lv_label_set_text(label_temperature, "--°F");
     lv_obj_align(label_temperature, LV_ALIGN_TOP_LEFT, 0, 0);
-    
-    // Weather description
+
     label_weather_desc = lv_label_create(weather_card);
     lv_obj_set_style_text_font(label_weather_desc, &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_color(label_weather_desc, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_weather_desc, "Loading...");
     lv_obj_align(label_weather_desc, LV_ALIGN_TOP_LEFT, 0, 60);
 
-    // Feels Like
     label_feels_like = lv_label_create(weather_card);
     lv_obj_set_style_text_font(label_feels_like, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(label_feels_like, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_feels_like, "Feels: --°F");
     lv_obj_align(label_feels_like, LV_ALIGN_TOP_LEFT, 0, 85);
 
-    // Temp Range
     label_temp_range = lv_label_create(weather_card);
     lv_obj_set_style_text_font(label_temp_range, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(label_temp_range, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_temp_range, "H: --° L: --°");
     lv_obj_align(label_temp_range, LV_ALIGN_TOP_LEFT, 0, 105);
-    
-    // Wind
+
     label_wind = lv_label_create(weather_card);
     lv_obj_set_style_text_font(label_wind, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label_wind, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_wind, "Wind: -- mph");
     lv_obj_align(label_wind, LV_ALIGN_TOP_LEFT, 0, 135);
-    
-    // Sunrise
+
     label_sunrise = lv_label_create(weather_card);
     lv_obj_set_style_text_font(label_sunrise, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label_sunrise, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_sunrise, LV_SYMBOL_UP " --:--");
     lv_obj_align(label_sunrise, LV_ALIGN_TOP_LEFT, 0, 155);
-    
-    // Sunset
+
     label_sunset = lv_label_create(weather_card);
     lv_obj_set_style_text_font(label_sunset, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label_sunset, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_sunset, LV_SYMBOL_DOWN " --:--");
     lv_obj_align(label_sunset, LV_ALIGN_TOP_LEFT, 0, 175);
 
-    // Humidity arc (circular gauge) - Bottom Left
     arc_humidity = lv_arc_create(weather_card);
-    lv_obj_set_size(arc_humidity, 80, 80); // Smaller arc
+    lv_obj_set_size(arc_humidity, 80, 80);
     lv_arc_set_range(arc_humidity, 0, 100);
     lv_arc_set_value(arc_humidity, 0);
     lv_obj_set_style_arc_color(arc_humidity, COLOR_ACCENT, LV_PART_INDICATOR);
@@ -357,103 +341,107 @@ void LVGLDisplayManager::build_home_screen() {
     lv_obj_set_style_arc_width(arc_humidity, 8, LV_PART_MAIN);
     lv_obj_align(arc_humidity, LV_ALIGN_BOTTOM_LEFT, 10, 0);
     lv_obj_remove_flag(arc_humidity, LV_OBJ_FLAG_CLICKABLE);
-    
+
     label_humidity = lv_label_create(arc_humidity);
     lv_obj_set_style_text_font(label_humidity, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label_humidity, COLOR_TEXT_PRIMARY, 0);
     lv_label_set_text(label_humidity, "--%");
     lv_obj_center(label_humidity);
-    
-    // --- Right Column: 5-Day Forecast ---
+
+    // 5-day forecast — right column
     int forecast_x = 200;
-    int row_height = 45;
-    int start_y = 10;
+    int row_height  = 45;
+    int start_y     = 10;
 
     lv_obj_t* forecast_title = lv_label_create(weather_card);
     lv_obj_set_style_text_font(forecast_title, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(forecast_title, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(forecast_title, "5-Day Forecast");
     lv_obj_align(forecast_title, LV_ALIGN_TOP_LEFT, forecast_x, -5);
-    
-    // Create 5 rows
-    for(int i=0; i<5; i++) {
+
+    for (int i = 0; i < 5; i++) {
         int y_pos = start_y + 25 + (i * row_height);
-        
-        // Container for alignment
+
         forecast_rows[i].container = lv_obj_create(weather_card);
         lv_obj_set_size(forecast_rows[i].container, 240, row_height);
         lv_obj_align(forecast_rows[i].container, LV_ALIGN_TOP_LEFT, forecast_x, y_pos);
         lv_obj_set_style_bg_opa(forecast_rows[i].container, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(forecast_rows[i].container, 0, 0);
         lv_obj_set_style_pad_all(forecast_rows[i].container, 0, 0);
-        
-        // Day Name (Mon, Tue...)
+
         forecast_rows[i].label_day = lv_label_create(forecast_rows[i].container);
         lv_obj_set_style_text_font(forecast_rows[i].label_day, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(forecast_rows[i].label_day, COLOR_TEXT_PRIMARY, 0);
         lv_label_set_text(forecast_rows[i].label_day, "---");
         lv_obj_align(forecast_rows[i].label_day, LV_ALIGN_LEFT_MID, 0, 0);
-        
-        // Condition (Rain, Clear...)
+
         forecast_rows[i].label_condition = lv_label_create(forecast_rows[i].container);
         lv_obj_set_style_text_font(forecast_rows[i].label_condition, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(forecast_rows[i].label_condition, COLOR_TEXT_SECONDARY, 0);
         lv_label_set_text(forecast_rows[i].label_condition, "");
         lv_obj_align(forecast_rows[i].label_condition, LV_ALIGN_CENTER, -10, 0);
-        
-        // Temp (H/L)
+
         forecast_rows[i].label_temp = lv_label_create(forecast_rows[i].container);
         lv_obj_set_style_text_font(forecast_rows[i].label_temp, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(forecast_rows[i].label_temp, COLOR_TEXT_PRIMARY, 0);
         lv_label_set_text(forecast_rows[i].label_temp, "--/--");
         lv_obj_align(forecast_rows[i].label_temp, LV_ALIGN_RIGHT_MID, 0, 0);
     }
-    
-    // Aircraft card (right side)
-    lv_obj_t* aircraft_card = lv_obj_create(screen_home);
+}
+
+void LVGLDisplayManager::buildAircraftCard(lv_obj_t* screen) {
+    lv_obj_t* aircraft_card = lv_obj_create(screen);
     lv_obj_set_size(aircraft_card, 260, 320);
     lv_obj_align(aircraft_card, LV_ALIGN_TOP_RIGHT, -20, 100);
     lv_obj_set_style_bg_color(aircraft_card, COLOR_CARD, 0);
-    lv_obj_set_style_border_color(aircraft_card, COLOR_CARD_BORDER, 0); // Add border
+    lv_obj_set_style_border_color(aircraft_card, COLOR_CARD_BORDER, 0);
     lv_obj_set_style_border_width(aircraft_card, 2, 0);
     lv_obj_set_style_shadow_width(aircraft_card, 20, 0);
     lv_obj_set_style_shadow_color(aircraft_card, lv_color_black(), 0);
     lv_obj_set_style_shadow_opa(aircraft_card, LV_OPA_30, 0);
     lv_obj_set_style_radius(aircraft_card, 16, 0);
     lv_obj_set_style_pad_all(aircraft_card, 20, 0);
-    
-    // Aircraft icon (using LVGL symbol)
+
     lv_obj_t* plane_icon = lv_label_create(aircraft_card);
     lv_obj_set_style_text_font(plane_icon, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_color(plane_icon, COLOR_ACCENT, 0);
     lv_label_set_text(plane_icon, LV_SYMBOL_GPS);
     lv_obj_align(plane_icon, LV_ALIGN_TOP_MID, 0, 20);
-    
-    // Plane count
+
     label_plane_count = lv_label_create(aircraft_card);
     lv_obj_set_style_text_font(label_plane_count, &lv_font_montserrat_32, 0);
     lv_obj_set_style_text_color(label_plane_count, COLOR_TEXT_PRIMARY, 0);
     lv_label_set_text(label_plane_count, "0");
     lv_obj_align(label_plane_count, LV_ALIGN_CENTER, 0, 0);
-    
+
     lv_obj_t* label_planes_text = lv_label_create(aircraft_card);
     lv_obj_set_style_text_font(label_planes_text, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label_planes_text, COLOR_TEXT_SECONDARY, 0);
     lv_label_set_text(label_planes_text, "Aircraft Nearby");
     lv_obj_align(label_planes_text, LV_ALIGN_CENTER, 0, 35);
-    
-    // View planes button
+
     btn_view_planes = lv_button_create(aircraft_card);
     lv_obj_set_size(btn_view_planes, 200, 50);
     lv_obj_align(btn_view_planes, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_bg_color(btn_view_planes, COLOR_ACCENT, 0);
     lv_obj_set_style_radius(btn_view_planes, 12, 0);
     lv_obj_add_event_cb(btn_view_planes, event_btn_view_planes, LV_EVENT_CLICKED, this);
-    
+
     lv_obj_t* btn_label = lv_label_create(btn_view_planes);
-    lv_obj_set_style_text_color(btn_label, lv_color_hex(0xffffff), 0); // White text on blue button
+    lv_obj_set_style_text_color(btn_label, lv_color_hex(0xffffff), 0);
     lv_label_set_text(btn_label, "View Aircraft");
     lv_obj_center(btn_label);
+}
+
+void LVGLDisplayManager::build_home_screen() {
+    screen_home = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen_home, COLOR_BG_TOP, 0);
+    lv_obj_set_style_bg_grad_color(screen_home, COLOR_BG_BOTTOM, 0);
+    lv_obj_set_style_bg_grad_dir(screen_home, LV_GRAD_DIR_VER, 0);
+
+    buildTopBar(screen_home);
+    buildWeatherCard(screen_home);
+    buildAircraftCard(screen_home);
 }
 
 // Build aircraft detail screen

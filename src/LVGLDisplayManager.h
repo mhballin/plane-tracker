@@ -105,6 +105,11 @@ private:
     void build_home_screen();
     void build_aircraft_screen();
     void build_no_aircraft_screen();
+
+    // Home screen section builders (called by build_home_screen)
+    void buildTopBar(lv_obj_t* screen);
+    void buildWeatherCard(lv_obj_t* screen);
+    void buildAircraftCard(lv_obj_t* screen);
     
     // Update functions
     void update_home_screen(const WeatherData& weather, int aircraftCount);
