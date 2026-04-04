@@ -88,9 +88,4 @@ namespace Config {
     constexpr int NIGHT_END_HOUR = 6;           // 6 AM — restore brightness
     constexpr uint8_t NIGHT_BRIGHTNESS = 50;    // Low brightness level
 
-    // ========================================
-    // Debug Settings
-    // ========================================
-    constexpr bool DEBUG_SERIAL = true;
-    constexpr bool DEBUG_API_RESPONSES = false;
 }
