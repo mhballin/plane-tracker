@@ -1,5 +1,6 @@
 Import("env")
 import os
+import pathlib
 
 def exclude_helium_files(node):
     """Filter out ARM Helium assembly files from LVGL"""
@@ -7,3 +8,52 @@ def exclude_helium_files(node):
 
 # Filter source files to exclude Helium
 env.AddBuildMiddleware(exclude_helium_files, "*")
+
+
+def generate_credentials(env):
+    """
+    Generate src/config/credentials.h from .env variables.
+
+    Using a generated header instead of build_flags because build_flags
+    break when credentials contain spaces, @ signs, or other special
+    characters that confuse SCons' Python expression evaluator.
+
+    PlatformIO 6+ auto-loads .env from the project root, so
+    os.environ will contain the values by the time this script runs.
+    """
+    creds_path = pathlib.Path("src/config/credentials.h")
+    creds_path.parent.mkdir(parents=True, exist_ok=True)
+
+    wifi_ssid       = os.environ.get("WIFI_SSID",            "YOUR_WIFI_SSID")
+    wifi_password   = os.environ.get("WIFI_PASSWORD",        "YOUR_WIFI_PASSWORD")
+    ow_key          = os.environ.get("OPENWEATHER_API_KEY",  "YOUR_OPENWEATHER_API_KEY")
+    weather_city    = os.environ.get("WEATHER_CITY",         "Portland,US")
+    opensky_id      = os.environ.get("OPENSKY_CLIENT_ID",    "your-opensky-client-id")
+    opensky_secret  = os.environ.get("OPENSKY_CLIENT_SECRET","your-opensky-client-secret")
+    home_lat        = os.environ.get("HOME_LAT",             "43.6591")
+    home_lon        = os.environ.get("HOME_LON",             "-70.2568")
+
+    # Escape backslashes and double-quotes inside the string values so the
+    # generated #define is valid C regardless of credential content.
+    def esc(s):
+        return s.replace("\\", "\\\\").replace('"', '\\"')
+
+    content = (
+        "// AUTO-GENERATED — do not edit. Source: .env via extra_script.py\n"
+        "// Re-generated on every build. File is git-ignored.\n"
+        "#pragma once\n"
+        "\n"
+        f'#define WIFI_SSID_MACRO           "{esc(wifi_ssid)}"\n'
+        f'#define WIFI_PASSWORD_MACRO        "{esc(wifi_password)}"\n'
+        f'#define OPENWEATHER_API_KEY_MACRO  "{esc(ow_key)}"\n'
+        f'#define WEATHER_CITY_MACRO         "{esc(weather_city)}"\n'
+        f'#define OPENSKY_CLIENT_ID_MACRO    "{esc(opensky_id)}"\n'
+        f'#define OPENSKY_CLIENT_SECRET_MACRO "{esc(opensky_secret)}"\n'
+        f"#define HOME_LAT_MACRO             {home_lat}f\n"
+        f"#define HOME_LON_MACRO             {home_lon}f\n"
+    )
+
+    creds_path.write_text(content)
+    print(f"[credentials] Generated {creds_path} from environment")
+
+generate_credentials(env)

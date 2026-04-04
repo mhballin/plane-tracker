@@ -1,7 +1,7 @@
 # Ignore user-specific secrets and local build artifacts
 
 # Secrets
-src/config/Config.h
+.env
 
 # PlatformIO
 .pio/
@@ -15,3 +15,10 @@ src/config/Config.h
 
 # Logs
 logs/*.log
+
+
+# PlatformIO environment folders
+.pioenvs/
+
+# Generated credentials (from .env via extra_script.py)
+src/config/credentials.h
