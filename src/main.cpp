@@ -1,8 +1,5 @@
 #include <Arduino.h>
-
 #include "core/App.h"
-
-#ifndef SMOKE_TEST
 
 static core::App app;
 
@@ -18,5 +15,3 @@ void setup() {
 void loop() {
     app.tick();
 }
-
-#endif  // SMOKE_TEST
