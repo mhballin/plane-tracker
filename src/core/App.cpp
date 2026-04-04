@@ -24,7 +24,8 @@ App::App()
     , displayTaskId_(Scheduler::INVALID_TASK)
     , healthTaskId_(Scheduler::INVALID_TASK)
     , serialBuffer_("")
-    , rawTouchMode_(false) {
+    , rawTouchMode_(false)
+    , lastWifiReconnectMs_(0) {
 }
 
 App::~App() {
@@ -60,11 +61,12 @@ bool App::begin() {
 
     display_->setStatusMessage("Connecting WiFi...");
     if (!connectWiFi()) {
-        display_->setStatusMessage("WiFi failed");
-        return false;
+        display_->setStatusMessage("WiFi failed - retrying...");
+        Serial.println("[WiFi] Initial connection failed; will retry in tick()");
+        // Don't halt — services will be skipped until WiFi is up
+    } else {
+        configTime(Config::GMT_OFFSET_SEC, Config::DAYLIGHT_OFFSET_SEC, Config::NTP_SERVER);
     }
-
-    configTime(Config::GMT_OFFSET_SEC, Config::DAYLIGHT_OFFSET_SEC, Config::NTP_SERVER);
 
     openSkyService_ = new OpenSkyService();
     weatherService_ = new WeatherService(Config::WEATHER_API_KEY, Config::WEATHER_CITY);
@@ -107,6 +109,20 @@ void App::tick() {
     processSerialCommands();
     processRawTouchDump();
     applyNightMode();
+
+    // Reconnect WiFi if dropped; retry at most every 30 seconds
+    if (WiFi.status() != WL_CONNECTED) {
+        if ((now - lastWifiReconnectMs_) >= Config::WIFI_RECONNECT_INTERVAL) {
+            lastWifiReconnectMs_ = now;
+            Serial.println("[WiFi] Disconnected — attempting reconnect");
+            if (display_) display_->setStatusMessage("WiFi reconnecting...");
+            if (connectWiFi()) {
+                configTime(Config::GMT_OFFSET_SEC, Config::DAYLIGHT_OFFSET_SEC, Config::NTP_SERVER);
+                if (openSkyService_) openSkyService_->initialize();
+                if (display_) display_->setStatusMessage("WiFi reconnected");
+            }
+        }
+    }
 
     if (display_) {
         display_->processTouch();
@@ -156,10 +172,11 @@ void App::tick() {
         webDashboard_->loop();
     }
 
-    delay(20);
+    delay(Config::TICK_DELAY_MS);
 }
 
 bool App::connectWiFi() {
+    Serial.printf("[WiFi] Connecting to SSID: \"%s\"\n", Config::WIFI_SSID);
     WiFi.mode(WIFI_STA);
     WiFi.begin(Config::WIFI_SSID, Config::WIFI_PASSWORD);
 
@@ -171,10 +188,8 @@ bool App::connectWiFi() {
             return false;
         }
         delay(300);
-        Serial.print('.');
     }
 
-    Serial.println();
     Serial.printf("[WiFi] Connected: %s\n", WiFi.localIP().toString().c_str());
     health_.setStatusMessage("WiFi connected");
     return true;

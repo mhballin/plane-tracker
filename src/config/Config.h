@@ -14,6 +14,8 @@ namespace Config {
     constexpr char WIFI_SSID[] = WIFI_SSID_MACRO;
     constexpr char WIFI_PASSWORD[] = WIFI_PASSWORD_MACRO;
     constexpr int WIFI_TIMEOUT_MS = 20000; // 20 seconds to connect
+    constexpr uint32_t TICK_DELAY_MS           = 20;     // Main loop delay
+    constexpr uint32_t WIFI_RECONNECT_INTERVAL  = 30000; // ms between reconnect attempts
 
     // ========================================
     // OpenWeather API Configuration (injected)
@@ -88,4 +90,15 @@ namespace Config {
     constexpr int NIGHT_END_HOUR = 6;           // 6 AM — restore brightness
     constexpr uint8_t NIGHT_BRIGHTNESS = 50;    // Low brightness level
 
+    // ========================================
+    // Display Geometry
+    // ========================================
+    namespace Display {
+        constexpr int WIDTH            = 800;
+        constexpr int HEIGHT           = 480;
+        constexpr int TAP_REGION_X_MIN = 720;
+        constexpr int TAP_REGION_X_MAX = 800;
+        constexpr int TAP_REGION_Y_MIN = 0;
+        constexpr int TAP_REGION_Y_MAX = 80;
+    }
 }
