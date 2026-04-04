@@ -5,6 +5,7 @@
 #include "LVGLDisplayManager.h"
 #include "core/HealthMonitor.h"
 #include "core/Scheduler.h"
+#include "core/SerialCommandHandler.h"
 #include "core/WiFiManager.h"
 #include "models/Aircraft.h"
 #include "models/WeatherData.h"
@@ -29,8 +30,6 @@ private:
     void updateAircraft();
     void updateDisplay();
 
-    void processSerialCommands();
-    void processRawTouchDump();
     void applyNightMode();
     void updateWebSnapshot();
 
@@ -56,8 +55,7 @@ private:
     int8_t displayTaskId_;
     int8_t healthTaskId_;
 
-    String serialBuffer_;
-    bool rawTouchMode_;
+    SerialCommandHandler serial_;
 };
 
 }  // namespace core

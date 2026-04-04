@@ -1,6 +1,5 @@
 #include "core/App.h"
 
-#include <Wire.h>
 #include <time.h>
 
 #include "config/Config.h"
@@ -22,8 +21,7 @@ App::App()
     , aircraftTaskId_(Scheduler::INVALID_TASK)
     , displayTaskId_(Scheduler::INVALID_TASK)
     , healthTaskId_(Scheduler::INVALID_TASK)
-    , serialBuffer_("")
-    , rawTouchMode_(false) {
+    , serial_(nullptr) {
 }
 
 App::~App() {
@@ -56,6 +54,8 @@ bool App::begin() {
         Serial.println("[ERROR] Display initialization failed");
         return false;
     }
+
+    serial_ = SerialCommandHandler(display_);
 
     display_->setStatusMessage("Connecting WiFi...");
     if (!wifiManager_.connect()) {
@@ -101,8 +101,7 @@ void App::tick() {
         lastTickMs_ = now;
     }
 
-    processSerialCommands();
-    processRawTouchDump();
+    serial_.tick();
     applyNightMode();
 
     wifiManager_.tick(now);
@@ -238,62 +237,6 @@ void App::updateDisplay() {
     }
 
     display_->update(currentWeather_, nullptr, 0);
-}
-
-void App::processSerialCommands() {
-    while (Serial.available()) {
-        char c = static_cast<char>(Serial.read());
-        if (c == '\n' || c == '\r') {
-            if (serialBuffer_.isEmpty()) {
-                continue;
-            }
-
-            serialBuffer_.toUpperCase();
-            if (serialBuffer_ == "RAW") {
-                rawTouchMode_ = !rawTouchMode_;
-                Serial.printf("[CMD] RAW mode %s\n", rawTouchMode_ ? "ON" : "OFF");
-            } else if (serialBuffer_ == "I2CSCAN") {
-                Serial.println("[CMD] Running I2C scan (use cautiously after display init)");
-                Wire.end();
-                Wire.begin(19, 20);
-                Wire.setClock(400000);
-                int found = 0;
-                for (uint8_t address = 1; address < 127; ++address) {
-                    Wire.beginTransmission(address);
-                    uint8_t err = Wire.endTransmission();
-                    if (err == 0) {
-                        Serial.printf("[I2C] 0x%02X\n", address);
-                        found++;
-                    }
-                }
-                Serial.printf("[I2C] Devices: %d\n", found);
-            }
-            serialBuffer_ = "";
-            continue;
-        }
-
-        serialBuffer_ += c;
-        if (serialBuffer_.length() > 64) {
-            serialBuffer_ = serialBuffer_.substring(serialBuffer_.length() - 64);
-        }
-    }
-}
-
-void App::processRawTouchDump() {
-    if (!rawTouchMode_ || !display_) {
-        return;
-    }
-
-    auto* lcd = display_->getLCD();
-    if (!lcd) {
-        return;
-    }
-
-    int tx = 0;
-    int ty = 0;
-    if (lcd->getTouch(&tx, &ty)) {
-        Serial.printf("RAW_TOUCH: %d, %d\n", tx, ty);
-    }
 }
 
 void App::applyNightMode() {
