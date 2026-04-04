@@ -1,6 +1,7 @@
 #include "core/App.h"
 
 #include <Wire.h>
+#include <time.h>
 
 #include "config/Config.h"
 
