@@ -118,8 +118,9 @@ static LVGLDisplayManager* s_instance = nullptr;
 #define COLOR_ACCENT     lv_color_hex(0x0284c7)  // Sky 600 (Deep Blue)
 #define COLOR_TEXT_PRIMARY lv_color_hex(0x0f172a) // Slate 900 (Almost Black)
 #define COLOR_TEXT_SECONDARY lv_color_hex(0x64748b) // Slate 500 (Grey text)
-#define COLOR_SUCCESS    lv_color_hex(0x22c55e)  // Green 500
-#define COLOR_WARNING    lv_color_hex(0xf59e0b)  // Amber 500
+#define COLOR_SUCCESS         lv_color_hex(0x22c55e)  // Green 500
+#define COLOR_WARNING         lv_color_hex(0xf59e0b)  // Amber 500
+#define COLOR_TEXT_ON_ACCENT  lv_color_hex(0xffffff)  // White — text on accent-coloured surfaces
 
 // Constructor
 LVGLDisplayManager::LVGLDisplayManager()
@@ -428,7 +429,7 @@ void LVGLDisplayManager::buildAircraftCard(lv_obj_t* screen) {
     lv_obj_add_event_cb(btn_view_planes, event_btn_view_planes, LV_EVENT_CLICKED, this);
 
     lv_obj_t* btn_label = lv_label_create(btn_view_planes);
-    lv_obj_set_style_text_color(btn_label, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(btn_label, COLOR_TEXT_ON_ACCENT, 0);
     lv_label_set_text(btn_label, "View Aircraft");
     lv_obj_center(btn_label);
 }
