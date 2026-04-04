@@ -50,6 +50,7 @@ namespace Config {
     constexpr unsigned long DISPLAY_UPDATE_INTERVAL = 1000;     // 1 second
     constexpr unsigned long TOKEN_LIFETIME = 1800000;           // 30 minutes
     constexpr unsigned long PLANE_DISPLAY_TIME = 5000;          // 5 seconds per plane
+    constexpr unsigned long HEALTH_UPDATE_INTERVAL = 2000;      // 2 seconds
 
     // ========================================
     // UI Behavior & Gestures
@@ -94,8 +95,8 @@ namespace Config {
     // Display Geometry
     // ========================================
     namespace Display {
-        constexpr int WIDTH            = 800;
-        constexpr int HEIGHT           = 480;
+        // Screen dimensions live in hal::Elecrow5Inch::PANEL_WIDTH/HEIGHT
+        // Tap region: top-right corner button (aircraft detail view)
         constexpr int TAP_REGION_X_MIN = 720;
         constexpr int TAP_REGION_X_MAX = 800;
         constexpr int TAP_REGION_Y_MIN = 0;

@@ -16,7 +16,7 @@
   - `pio run -t upload`
   - `pio device monitor -b 115200 -p /dev/cu.usbserial-110`
 - VS Code tasks (`PlatformIO: Build/Upload/Monitor`) mirror those commands.
-- Serial logging is always on when `Config::DEBUG_SERIAL` is true; the device halts on fatal init errors so logs are essential.
+- Enable verbose serial logging by adding `-DDEBUG_SERIAL` to build_flags in platformio.ini; the device halts on fatal init errors so logs are essential.
 - Display smoke test lives in `src/display_smoke_test.cpp`; rebuild with `-DSMOKE_TEST` (see `platformio.ini` comment) when tuning RGB timing/touch without the full app.
 
 ## Architecture & Patterns

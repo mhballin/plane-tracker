@@ -114,7 +114,7 @@ Edit `src/config/Config.h` (copy from `Config.example.h`) to customize:
 | `BRIGHTNESS_HIGH` / `BRIGHTNESS_LOW` | 150 / 50 | Day/night brightness levels |
 | `NIGHT_START_HOUR` / `NIGHT_END_HOUR` | 22 / 6 | Auto-dim schedule |
 
-**⚠️ Security Note**: `src/config/Config.h` **must never be committed** to version control—it contains API keys and WiFi credentials. The file is excluded by `.gitignore`. Always work from the example template.
+
 
 ---
 
@@ -148,7 +148,7 @@ See [vision.md](docs/vision.md) and [rapid-iteration.md](docs/rapid-iteration.md
 
 ### Serial Debugging
 
-The firmware logs to serial console when `DEBUG_SERIAL = true` in Config.h:
+Enable verbose serial logging by adding `-DDEBUG_SERIAL` to build_flags in platformio.ini:
 
 ```bash
 pio device monitor -b 115200

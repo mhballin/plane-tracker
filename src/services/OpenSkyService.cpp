@@ -145,6 +145,7 @@ int OpenSkyService::fetchAircraft(Aircraft* aircraftList, int maxAircraft) {
                         plane.longitude = state[5].as<float>();   // null-checked above
                         plane.latitude  = state[6].as<float>();   // null-checked above
                         plane.altitude  = state[7].isNull() ? 0.0f : state[7].as<float>();
+                        // Default to false (airborne) when null — permissive, prefer showing over hiding aircraft
                         plane.onGround  = state[8].isNull() ? false : state[8].as<bool>();
                         if (plane.onGround) continue;
                         plane.velocity  = state[9].isNull()  ? 0.0f : state[9].as<float>();
