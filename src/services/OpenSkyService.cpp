@@ -139,23 +139,21 @@ int OpenSkyService::fetchAircraft(Aircraft* aircraftList, int maxAircraft) {
                         if (state[6].isNull() || state[5].isNull()) continue;
 
                         Aircraft &plane = aircraftList[aircraftCount];
-                        plane.icao24 = state[0].as<String>();
-                        plane.callsign = state[1].as<String>();
+                        plane.icao24    = state[0].isNull() ? "" : state[0].as<String>();
+                        plane.callsign  = state[1].isNull() ? "" : state[1].as<String>();
                         plane.callsign.trim();
-                        plane.longitude = state[5].as<float>();
-                        plane.latitude = state[6].as<float>();
-                        plane.altitude = state[7].isNull() ? 0 : state[7].as<float>();
-                        plane.onGround = state[8].as<bool>();
+                        plane.longitude = state[5].as<float>();   // null-checked above
+                        plane.latitude  = state[6].as<float>();   // null-checked above
+                        plane.altitude  = state[7].isNull() ? 0.0f : state[7].as<float>();
+                        plane.onGround  = state[8].isNull() ? false : state[8].as<bool>();
                         if (plane.onGround) continue;
-
-                        plane.velocity = state[9].isNull() ? 0 : state[9].as<float>();
-                        plane.heading = state[10].isNull() ? 0 : state[10].as<float>();
-                        plane.valid = true;
+                        plane.velocity  = state[9].isNull()  ? 0.0f : state[9].as<float>();
+                        plane.heading   = state[10].isNull() ? 0.0f : state[10].as<float>();
+                        plane.valid     = true;
                         plane.aircraftType = guessAircraftType(plane.callsign);
-                        plane.airline = guessAirline(plane.callsign);
+                        plane.airline      = guessAirline(plane.callsign);
                         if (plane.airline == "Private") continue;
-
-                        plane.origin = "";
+                        plane.origin      = "";
                         plane.destination = "";
                         aircraftCount++;
                     }
