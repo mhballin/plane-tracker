@@ -11,6 +11,7 @@
 #include "models/WeatherData.h"
 #include "services/OpenSkyService.h"
 #include "services/WeatherService.h"
+#include "services/RouteCache.h"
 #include "web/WebDashboard.h"
 
 namespace core {
@@ -54,6 +55,10 @@ private:
     int8_t aircraftTaskId_;
     int8_t displayTaskId_;
     int8_t healthTaskId_;
+
+    RouteCache*   routeCache_;
+    bool          routeFetchDone_;
+    String        lastRouteFetchCallsign_;
 
     SerialCommandHandler serial_;
 };

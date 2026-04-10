@@ -21,13 +21,17 @@ App::App()
     , aircraftTaskId_(Scheduler::INVALID_TASK)
     , displayTaskId_(Scheduler::INVALID_TASK)
     , healthTaskId_(Scheduler::INVALID_TASK)
-    , serial_(nullptr) {
+    , serial_(nullptr)
+    , routeCache_(nullptr)
+    , routeFetchDone_(false)
+    , lastRouteFetchCallsign_("") {
 }
 
 App::~App() {
     delete webDashboard_;
     delete weatherService_;
     delete openSkyService_;
+    delete routeCache_;
     delete display_;
     delete[] aircraftList_;
 }
@@ -78,6 +82,8 @@ bool App::begin() {
 
     webDashboard_->begin(80);
 
+    routeCache_ = new RouteCache();
+
     setupTasks();
 
     // Prime data so first render/web response is useful.
@@ -117,6 +123,10 @@ void App::tick() {
     if (display_) {
         uint32_t changedAt = display_->getLastScreenChangeTime();
         if (changedAt != 0 && changedAt != lastRedrawnScreenChange_) {
+            if (display_->getCurrentScreen() == LVGLDisplayManager::SCREEN_AIRCRAFT_DETAIL) {
+                routeFetchDone_ = false;
+                lastRouteFetchCallsign_ = "";
+            }
             updateDisplay();
             lastRedrawnScreenChange_ = changedAt;
         }
@@ -140,6 +150,8 @@ void App::tick() {
         if (currentAircraftCount_ > 1 && (now - lastPlaneSwitchMs_) >= Config::PLANE_DISPLAY_TIME) {
             currentAircraftIndex_ = (currentAircraftIndex_ + 1) % currentAircraftCount_;
             lastPlaneSwitchMs_ = now;
+            routeFetchDone_ = false;
+            lastRouteFetchCallsign_ = "";
         }
     }
 
@@ -228,8 +240,28 @@ void App::updateDisplay() {
     }
 
     if (screen == LVGLDisplayManager::SCREEN_AIRCRAFT_DETAIL) {
-        if (currentAircraftCount_ > 0 && currentAircraftIndex_ < currentAircraftCount_ && aircraftList_[currentAircraftIndex_].valid) {
-            display_->update(currentWeather_, &aircraftList_[currentAircraftIndex_], currentAircraftCount_);
+        if (currentAircraftCount_ > 0
+            && currentAircraftIndex_ < currentAircraftCount_
+            && aircraftList_[currentAircraftIndex_].valid) {
+
+            Aircraft& cur = aircraftList_[currentAircraftIndex_];
+
+            // Trigger route lookup once per callsign
+            if (routeCache_ && cur.origin.isEmpty()
+                && cur.callsign != lastRouteFetchCallsign_) {
+                lastRouteFetchCallsign_ = cur.callsign;
+                routeFetchDone_ = false;
+            }
+            if (routeCache_ && !routeFetchDone_ && !cur.callsign.isEmpty()) {
+                routeFetchDone_ = true;
+                String org, dst, orgName, dstName;
+                if (routeCache_->lookup(cur.callsign, org, dst, orgName, dstName)) {
+                    cur.origin      = org;
+                    cur.destination = dst;
+                }
+            }
+
+            display_->update(currentWeather_, &cur, currentAircraftCount_);
         } else {
             display_->setScreen(LVGLDisplayManager::SCREEN_NO_AIRCRAFT);
         }
