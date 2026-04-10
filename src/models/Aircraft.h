@@ -24,5 +24,6 @@ public:
     Aircraft() :
         latitude(0), longitude(0), altitude(0),
         velocity(0), heading(0), verticalRate(0),
+        squawk(""),
         onGround(false), valid(false) {}
 };
