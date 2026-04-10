@@ -133,6 +133,7 @@ static LVGLDisplayManager* s_instance = nullptr;
 #define COLOR_BORDER         lv_color_hex(0x1e3a54)
 #define COLOR_BORDER_ACCENT  lv_color_hex(0x004466)
 #define COLOR_TEXT_ON_ACCENT lv_color_hex(0x060e1a)
+#define COLOR_DESCENT        lv_color_hex(0xef4444)
 
 // Constructor
 LVGLDisplayManager::LVGLDisplayManager()
@@ -474,6 +475,7 @@ void LVGLDisplayManager::buildWeatherPanel(lv_obj_t* parent, WeatherWidgets& w) 
 void LVGLDisplayManager::updateWeatherWidgets(WeatherWidgets& w,
                                                const WeatherData& weather,
                                                int aircraftCount) {
+    // All widgets are built together; if label_temperature exists, the others do too.
     if (!w.label_temperature) return;
 
     char buf[64];
@@ -659,7 +661,6 @@ void LVGLDisplayManager::buildRadarPanel(lv_obj_t* parent) {
     lv_obj_set_size(btn_view_planes, 220, 36);
     lv_obj_set_style_bg_color(btn_view_planes, COLOR_ACCENT, 0);
     lv_obj_set_style_radius(btn_view_planes, 4, 0);
-    lv_obj_add_event_cb(btn_view_planes, event_btn_view_planes, LV_EVENT_CLICKED, this);
 
     lv_obj_t* btn_lbl = lv_label_create(btn_view_planes);
     lv_obj_set_style_text_font(btn_lbl, &lv_font_montserrat_12, 0);
@@ -1138,7 +1139,7 @@ void LVGLDisplayManager::update_aircraft_screen(const Aircraft& aircraft) {
 
     // Route block
     if (aircraft.origin.length() > 0 && aircraft.destination.length() > 0) {
-        char route_buf[32];
+        char route_buf[64];
         snprintf(route_buf, sizeof(route_buf), "%s  \xe2\x86\x92  %s",
                  aircraft.origin.c_str(), aircraft.destination.c_str());
         lv_label_set_text(label_route_main, route_buf);
@@ -1178,7 +1179,7 @@ void LVGLDisplayManager::update_aircraft_screen(const Aircraft& aircraft) {
     if (fpm > 50.0f) {
         lv_obj_set_style_text_color(label_vert_speed, COLOR_SUCCESS, 0);
     } else if (fpm < -50.0f) {
-        lv_obj_set_style_text_color(label_vert_speed, lv_color_hex(0xef4444), 0);
+        lv_obj_set_style_text_color(label_vert_speed, COLOR_DESCENT, 0);
     } else {
         lv_obj_set_style_text_color(label_vert_speed, COLOR_TEXT_PRIMARY, 0);
     }
