@@ -262,7 +262,7 @@ void LVGLDisplayManager::touchpad_read(lv_indev_t* indev, lv_indev_data_t* data)
 // Build home screen with modern card-based layout
 void LVGLDisplayManager::buildTopBar(lv_obj_t* screen, WeatherWidgets& w) {
     lv_obj_t* bar = lv_obj_create(screen);
-    lv_obj_set_size(bar, 800, 58);
+    lv_obj_set_size(bar, hal::Elecrow5Inch::PANEL_WIDTH, 58);
     lv_obj_set_pos(bar, 0, 0);
     lv_obj_set_style_bg_color(bar, COLOR_TOPBAR, 0);
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
@@ -297,7 +297,7 @@ void LVGLDisplayManager::buildTopBar(lv_obj_t* screen, WeatherWidgets& w) {
 
 void LVGLDisplayManager::buildStatusBar(lv_obj_t* screen, WeatherWidgets& w) {
     lv_obj_t* bar = lv_obj_create(screen);
-    lv_obj_set_size(bar, 800, 26);
+    lv_obj_set_size(bar, hal::Elecrow5Inch::PANEL_WIDTH, 26);
     lv_obj_align(bar, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_bg_color(bar, COLOR_STATUSBAR, 0);
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
@@ -760,6 +760,9 @@ void LVGLDisplayManager::update_clock(WeatherWidgets& w) {
     if (statusClearTime > 0 && millis() >= statusClearTime) {
         statusClearTime = 0;
         statusMessage = "";
+        if (homeWidgets.label_status_left)  lv_label_set_text(homeWidgets.label_status_left,  "");
+        if (emptyWidgets.label_status_left) lv_label_set_text(emptyWidgets.label_status_left, "");
+        if (label_status_aircraft)          lv_label_set_text(label_status_aircraft,           "");
     }
 }
 
