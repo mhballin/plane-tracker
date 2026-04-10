@@ -246,10 +246,11 @@ void App::updateDisplay() {
 
             Aircraft& cur = aircraftList_[currentAircraftIndex_];
 
-            // Trigger route lookup once per callsign
-            if (routeCache_ && cur.origin.isEmpty()
-                && cur.callsign != lastRouteFetchCallsign_) {
+            // Trigger route lookup once per callsign; clear stale data on callsign change
+            if (routeCache_ && cur.callsign != lastRouteFetchCallsign_) {
                 lastRouteFetchCallsign_ = cur.callsign;
+                cur.origin      = "";
+                cur.destination = "";
                 routeFetchDone_ = false;
             }
             if (routeCache_ && !routeFetchDone_ && !cur.callsign.isEmpty()) {

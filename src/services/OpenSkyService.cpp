@@ -187,8 +187,6 @@ int OpenSkyService::fetchAircraft(Aircraft* aircraftList, int maxAircraft) {
                         plane.aircraftType = guessAircraftType(plane.callsign);
                         plane.airline      = guessAirline(plane.callsign);
                         if (plane.airline == "Private") continue;
-                        plane.origin      = "";
-                        plane.destination = "";
                         aircraftCount++;
                     }
 
