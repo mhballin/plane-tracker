@@ -3,6 +3,14 @@
 #include "LVGLDisplayManager.h"
 #include "config/Config.h"
 #include "hal/ElecrowDisplayProfile.h"
+// Undef Arduino.h macros that clash with GeoUtils constexpr names
+#ifdef DEG_TO_RAD
+#undef DEG_TO_RAD
+#endif
+#ifdef RAD_TO_DEG
+#undef RAD_TO_DEG
+#endif
+#include "utils/GeoUtils.h"
 #include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
 
@@ -322,426 +330,858 @@ void LVGLDisplayManager::buildStatusBar(lv_obj_t* screen, WeatherWidgets& w) {
     lv_obj_align(w.label_status_live, LV_ALIGN_RIGHT_MID, 0, 0);
 }
 
-void LVGLDisplayManager::buildWeatherCard(lv_obj_t* screen) {
-    lv_obj_t* weather_card = lv_obj_create(screen);
-    lv_obj_set_size(weather_card, 480, 320);
-    lv_obj_align(weather_card, LV_ALIGN_TOP_LEFT, 20, 100);
-    lv_obj_set_style_bg_color(weather_card, COLOR_PANEL, 0);
-    lv_obj_set_style_border_color(weather_card, COLOR_BORDER, 0);
-    lv_obj_set_style_border_width(weather_card, 2, 0);
-    lv_obj_set_style_shadow_width(weather_card, 20, 0);
-    lv_obj_set_style_shadow_color(weather_card, lv_color_black(), 0);
-    lv_obj_set_style_shadow_opa(weather_card, LV_OPA_30, 0);
-    lv_obj_set_style_radius(weather_card, 16, 0);
-    lv_obj_set_style_pad_all(weather_card, 20, 0);
+void LVGLDisplayManager::buildWeatherPanel(lv_obj_t* parent, WeatherWidgets& w) {
+    lv_obj_set_style_bg_opa(parent, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(parent, 0, 0);
+    lv_obj_set_style_pad_all(parent, 0, 0);
+    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
-    label_temperature = lv_label_create(weather_card);
-    lv_obj_set_style_text_font(label_temperature, &lv_font_montserrat_48, 0);
-    lv_obj_set_style_text_color(label_temperature, COLOR_TEXT_PRIMARY, 0);
-    lv_label_set_text(label_temperature, "--°F");
-    lv_obj_align(label_temperature, LV_ALIGN_TOP_LEFT, 0, 0);
+    // Internal padding container
+    lv_obj_t* pad = lv_obj_create(parent);
+    lv_obj_set_size(pad, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_opa(pad, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(pad, 0, 0);
+    lv_obj_set_style_pad_hor(pad, 16, 0);
+    lv_obj_set_style_pad_ver(pad, 12, 0);
+    lv_obj_clear_flag(pad, LV_OBJ_FLAG_SCROLLABLE);
 
-    label_weather_desc = lv_label_create(weather_card);
-    lv_obj_set_style_text_font(label_weather_desc, &lv_font_montserrat_18, 0);
-    lv_obj_set_style_text_color(label_weather_desc, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_weather_desc, "Loading...");
-    lv_obj_align(label_weather_desc, LV_ALIGN_TOP_LEFT, 0, 60);
+    // Temperature (large, top-left)
+    w.label_temperature = lv_label_create(pad);
+    lv_obj_set_style_text_font(w.label_temperature, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(w.label_temperature, COLOR_TEXT_PRIMARY, 0);
+    lv_label_set_text(w.label_temperature, "--\xc2\xb0");
+    lv_obj_set_pos(w.label_temperature, 0, 0);
 
-    label_feels_like = lv_label_create(weather_card);
-    lv_obj_set_style_text_font(label_feels_like, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(label_feels_like, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_feels_like, "Feels: --°F");
-    lv_obj_align(label_feels_like, LV_ALIGN_TOP_LEFT, 0, 85);
+    // Condition (to right of temperature)
+    w.label_weather_desc = lv_label_create(pad);
+    lv_obj_set_style_text_font(w.label_weather_desc, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(w.label_weather_desc, COLOR_TEXT_SECONDARY, 0);
+    lv_label_set_text(w.label_weather_desc, "Loading...");
+    lv_obj_set_pos(w.label_weather_desc, 110, 4);
 
-    label_temp_range = lv_label_create(weather_card);
-    lv_obj_set_style_text_font(label_temp_range, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(label_temp_range, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_temp_range, "H: --° L: --°");
-    lv_obj_align(label_temp_range, LV_ALIGN_TOP_LEFT, 0, 105);
+    // Feels-like
+    w.label_feels_like = lv_label_create(pad);
+    lv_obj_set_style_text_font(w.label_feels_like, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(w.label_feels_like, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(w.label_feels_like, "Feels: --\xc2\xb0");
+    lv_obj_set_pos(w.label_feels_like, 110, 24);
 
-    label_wind = lv_label_create(weather_card);
-    lv_obj_set_style_text_font(label_wind, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(label_wind, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_wind, "Wind: -- mph");
-    lv_obj_align(label_wind, LV_ALIGN_TOP_LEFT, 0, 135);
+    // Hi/Lo
+    w.label_temp_range = lv_label_create(pad);
+    lv_obj_set_style_text_font(w.label_temp_range, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(w.label_temp_range, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(w.label_temp_range, "H: --\xc2\xb0  L: --\xc2\xb0");
+    lv_obj_set_pos(w.label_temp_range, 110, 42);
 
-    label_sunrise = lv_label_create(weather_card);
-    lv_obj_set_style_text_font(label_sunrise, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(label_sunrise, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_sunrise, LV_SYMBOL_UP " --:--");
-    lv_obj_align(label_sunrise, LV_ALIGN_TOP_LEFT, 0, 155);
+    // Details strip (border top + bottom)
+    lv_obj_t* strip = lv_obj_create(pad);
+    lv_obj_set_size(strip, LV_PCT(100), 36);
+    lv_obj_set_pos(strip, 0, 68);
+    lv_obj_set_style_bg_opa(strip, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_side(strip, (lv_border_side_t)(LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM), 0);
+    lv_obj_set_style_border_color(strip, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(strip, 1, 0);
+    lv_obj_set_style_radius(strip, 0, 0);
+    lv_obj_set_style_pad_all(strip, 0, 0);
+    lv_obj_clear_flag(strip, LV_OBJ_FLAG_SCROLLABLE);
 
-    label_sunset = lv_label_create(weather_card);
-    lv_obj_set_style_text_font(label_sunset, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(label_sunset, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_sunset, LV_SYMBOL_DOWN " --:--");
-    lv_obj_align(label_sunset, LV_ALIGN_TOP_LEFT, 0, 175);
+    lv_obj_t* lbl_wind_hdr = lv_label_create(strip);
+    lv_obj_set_style_text_font(lbl_wind_hdr, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_wind_hdr, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(lbl_wind_hdr, "WIND");
+    lv_obj_set_pos(lbl_wind_hdr, 0, 4);
 
-    arc_humidity = lv_arc_create(weather_card);
-    lv_obj_set_size(arc_humidity, 80, 80);
-    lv_arc_set_range(arc_humidity, 0, 100);
-    lv_arc_set_value(arc_humidity, 0);
-    lv_obj_set_style_arc_color(arc_humidity, COLOR_ACCENT, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(arc_humidity, 8, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(arc_humidity, 8, LV_PART_MAIN);
-    lv_obj_align(arc_humidity, LV_ALIGN_BOTTOM_LEFT, 10, 0);
-    lv_obj_remove_flag(arc_humidity, LV_OBJ_FLAG_CLICKABLE);
+    w.label_wind = lv_label_create(strip);
+    lv_obj_set_style_text_font(w.label_wind, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(w.label_wind, COLOR_TEXT_PRIMARY, 0);
+    lv_label_set_text(w.label_wind, "-- mph");
+    lv_obj_set_pos(w.label_wind, 0, 18);
 
-    label_humidity = lv_label_create(arc_humidity);
-    lv_obj_set_style_text_font(label_humidity, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(label_humidity, COLOR_TEXT_PRIMARY, 0);
-    lv_label_set_text(label_humidity, "--%");
-    lv_obj_center(label_humidity);
+    lv_obj_t* lbl_hum_hdr = lv_label_create(strip);
+    lv_obj_set_style_text_font(lbl_hum_hdr, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_hum_hdr, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(lbl_hum_hdr, "HUMIDITY");
+    lv_obj_set_pos(lbl_hum_hdr, 90, 4);
 
-    // 5-day forecast — right column
-    int forecast_x = 200;
-    int row_height  = 45;
-    int start_y     = 10;
+    w.label_humidity_val = lv_label_create(strip);
+    lv_obj_set_style_text_font(w.label_humidity_val, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(w.label_humidity_val, COLOR_TEXT_PRIMARY, 0);
+    lv_label_set_text(w.label_humidity_val, "--%");
+    lv_obj_set_pos(w.label_humidity_val, 90, 18);
 
-    lv_obj_t* forecast_title = lv_label_create(weather_card);
-    lv_obj_set_style_text_font(forecast_title, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(forecast_title, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(forecast_title, "5-Day Forecast");
-    lv_obj_align(forecast_title, LV_ALIGN_TOP_LEFT, forecast_x, -5);
+    w.label_sunrise = lv_label_create(strip);
+    lv_obj_set_style_text_font(w.label_sunrise, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(w.label_sunrise, COLOR_AMBER, 0);
+    lv_label_set_text(w.label_sunrise, LV_SYMBOL_UP " --:--");
+    lv_obj_align(w.label_sunrise, LV_ALIGN_RIGHT_MID, -70, 0);
 
+    w.label_sunset = lv_label_create(strip);
+    lv_obj_set_style_text_font(w.label_sunset, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(w.label_sunset, COLOR_AMBER, 0);
+    lv_label_set_text(w.label_sunset, LV_SYMBOL_DOWN " --:--");
+    lv_obj_align(w.label_sunset, LV_ALIGN_RIGHT_MID, 0, 0);
+
+    // 5-day forecast header
+    lv_obj_t* fc_header = lv_label_create(pad);
+    lv_obj_set_style_text_font(fc_header, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(fc_header, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(fc_header, "5-DAY FORECAST");
+    lv_obj_set_pos(fc_header, 0, 112);
+
+    // 5 forecast rows
     for (int i = 0; i < 5; i++) {
-        int y_pos = start_y + 25 + (i * row_height);
+        int y = 130 + i * 46;
+        WeatherWidgets::ForecastRow& row = w.forecast[i];
 
-        forecast_rows[i].container = lv_obj_create(weather_card);
-        lv_obj_set_size(forecast_rows[i].container, 240, row_height);
-        lv_obj_align(forecast_rows[i].container, LV_ALIGN_TOP_LEFT, forecast_x, y_pos);
-        lv_obj_set_style_bg_opa(forecast_rows[i].container, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(forecast_rows[i].container, 0, 0);
-        lv_obj_set_style_pad_all(forecast_rows[i].container, 0, 0);
+        row.container = lv_obj_create(pad);
+        lv_obj_set_size(row.container, LV_PCT(100), 40);
+        lv_obj_set_pos(row.container, 0, y);
+        lv_obj_set_style_bg_color(row.container, COLOR_INSET, 0);
+        lv_obj_set_style_bg_opa(row.container, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(row.container, COLOR_BORDER, 0);
+        lv_obj_set_style_border_width(row.container, 1, 0);
+        lv_obj_set_style_radius(row.container, 4, 0);
+        lv_obj_set_style_pad_hor(row.container, 10, 0);
+        lv_obj_set_style_pad_ver(row.container, 0, 0);
+        lv_obj_clear_flag(row.container, LV_OBJ_FLAG_SCROLLABLE);
 
-        forecast_rows[i].label_day = lv_label_create(forecast_rows[i].container);
-        lv_obj_set_style_text_font(forecast_rows[i].label_day, &lv_font_montserrat_16, 0);
-        lv_obj_set_style_text_color(forecast_rows[i].label_day, COLOR_TEXT_PRIMARY, 0);
-        lv_label_set_text(forecast_rows[i].label_day, "---");
-        lv_obj_align(forecast_rows[i].label_day, LV_ALIGN_LEFT_MID, 0, 0);
+        row.label_day = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_day, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(row.label_day, COLOR_TEXT_SECONDARY, 0);
+        lv_label_set_text(row.label_day, "---");
+        lv_obj_align(row.label_day, LV_ALIGN_LEFT_MID, 0, 0);
 
-        forecast_rows[i].label_condition = lv_label_create(forecast_rows[i].container);
-        lv_obj_set_style_text_font(forecast_rows[i].label_condition, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(forecast_rows[i].label_condition, COLOR_TEXT_SECONDARY, 0);
-        lv_label_set_text(forecast_rows[i].label_condition, "");
-        lv_obj_align(forecast_rows[i].label_condition, LV_ALIGN_CENTER, -10, 0);
+        row.label_cond = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_cond, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(row.label_cond, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(row.label_cond, "");
+        lv_obj_align(row.label_cond, LV_ALIGN_CENTER, 0, 0);
 
-        forecast_rows[i].label_temp = lv_label_create(forecast_rows[i].container);
-        lv_obj_set_style_text_font(forecast_rows[i].label_temp, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(forecast_rows[i].label_temp, COLOR_TEXT_PRIMARY, 0);
-        lv_label_set_text(forecast_rows[i].label_temp, "--/--");
-        lv_obj_align(forecast_rows[i].label_temp, LV_ALIGN_RIGHT_MID, 0, 0);
+        row.label_hi = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_hi, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(row.label_hi, COLOR_TEXT_PRIMARY, 0);
+        lv_label_set_text(row.label_hi, "--\xc2\xb0");
+        lv_obj_align(row.label_hi, LV_ALIGN_RIGHT_MID, -30, 0);
+
+        row.label_lo = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_lo, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(row.label_lo, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(row.label_lo, "--\xc2\xb0");
+        lv_obj_align(row.label_lo, LV_ALIGN_RIGHT_MID, 0, 0);
     }
 }
 
-void LVGLDisplayManager::buildAircraftCard(lv_obj_t* screen) {
-    lv_obj_t* aircraft_card = lv_obj_create(screen);
-    lv_obj_set_size(aircraft_card, 260, 320);
-    lv_obj_align(aircraft_card, LV_ALIGN_TOP_RIGHT, -20, 100);
-    lv_obj_set_style_bg_color(aircraft_card, COLOR_PANEL, 0);
-    lv_obj_set_style_border_color(aircraft_card, COLOR_BORDER, 0);
-    lv_obj_set_style_border_width(aircraft_card, 2, 0);
-    lv_obj_set_style_shadow_width(aircraft_card, 20, 0);
-    lv_obj_set_style_shadow_color(aircraft_card, lv_color_black(), 0);
-    lv_obj_set_style_shadow_opa(aircraft_card, LV_OPA_30, 0);
-    lv_obj_set_style_radius(aircraft_card, 16, 0);
-    lv_obj_set_style_pad_all(aircraft_card, 20, 0);
+void LVGLDisplayManager::updateWeatherWidgets(WeatherWidgets& w,
+                                               const WeatherData& weather,
+                                               int aircraftCount) {
+    if (!w.label_temperature) return;
 
-    lv_obj_t* plane_icon = lv_label_create(aircraft_card);
-    lv_obj_set_style_text_font(plane_icon, &lv_font_montserrat_48, 0);
-    lv_obj_set_style_text_color(plane_icon, COLOR_ACCENT, 0);
-    lv_label_set_text(plane_icon, LV_SYMBOL_GPS);
-    lv_obj_align(plane_icon, LV_ALIGN_TOP_MID, 0, 20);
+    char buf[64];
 
-    label_plane_count = lv_label_create(aircraft_card);
-    lv_obj_set_style_text_font(label_plane_count, &lv_font_montserrat_32, 0);
-    lv_obj_set_style_text_color(label_plane_count, COLOR_TEXT_PRIMARY, 0);
-    lv_label_set_text(label_plane_count, "0");
-    lv_obj_align(label_plane_count, LV_ALIGN_CENTER, 0, 0);
+    snprintf(buf, sizeof(buf), "%.0f\xc2\xb0""F", weather.temperature);
+    lv_label_set_text(w.label_temperature, buf);
 
-    lv_obj_t* label_planes_text = lv_label_create(aircraft_card);
-    lv_obj_set_style_text_font(label_planes_text, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(label_planes_text, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_planes_text, "Aircraft Nearby");
-    lv_obj_align(label_planes_text, LV_ALIGN_CENTER, 0, 35);
+    lv_label_set_text(w.label_weather_desc, weather.description.c_str());
 
-    btn_view_planes = lv_button_create(aircraft_card);
-    lv_obj_set_size(btn_view_planes, 200, 50);
-    lv_obj_align(btn_view_planes, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_bg_color(btn_view_planes, COLOR_ACCENT, 0);
-    lv_obj_set_style_radius(btn_view_planes, 12, 0);
-    lv_obj_add_event_cb(btn_view_planes, event_btn_view_planes, LV_EVENT_CLICKED, this);
+    snprintf(buf, sizeof(buf), "Feels: %.0f\xc2\xb0""F", weather.feelsLike);
+    lv_label_set_text(w.label_feels_like, buf);
 
-    lv_obj_t* btn_label = lv_label_create(btn_view_planes);
-    lv_obj_set_style_text_color(btn_label, COLOR_TEXT_ON_ACCENT, 0);
-    lv_label_set_text(btn_label, "View Aircraft");
-    lv_obj_center(btn_label);
+    snprintf(buf, sizeof(buf), "H: %.0f\xc2\xb0  L: %.0f\xc2\xb0", weather.tempMax, weather.tempMin);
+    lv_label_set_text(w.label_temp_range, buf);
+
+    snprintf(buf, sizeof(buf), "%.0f mph", weather.windSpeed);
+    lv_label_set_text(w.label_wind, buf);
+
+    snprintf(buf, sizeof(buf), "%.0f%%", weather.humidity);
+    lv_label_set_text(w.label_humidity_val, buf);
+
+    snprintf(buf, sizeof(buf), LV_SYMBOL_UP " %s", formatTime(weather.sunrise).c_str());
+    lv_label_set_text(w.label_sunrise, buf);
+
+    snprintf(buf, sizeof(buf), LV_SYMBOL_DOWN " %s", formatTime(weather.sunset).c_str());
+    lv_label_set_text(w.label_sunset, buf);
+
+    for (int i = 0; i < 5; i++) {
+        if (!w.forecast[i].container) continue;
+        if (i < (int)weather.forecast.size()) {
+            const auto& day = weather.forecast[i];
+            lv_label_set_text(w.forecast[i].label_day,  day.dayName.c_str());
+            lv_label_set_text(w.forecast[i].label_cond, day.condition.c_str());
+            snprintf(buf, sizeof(buf), "%.0f\xc2\xb0", day.tempMax);
+            lv_label_set_text(w.forecast[i].label_hi, buf);
+            snprintf(buf, sizeof(buf), "%.0f\xc2\xb0", day.tempMin);
+            lv_label_set_text(w.forecast[i].label_lo, buf);
+        } else {
+            lv_label_set_text(w.forecast[i].label_day,  "-");
+            lv_label_set_text(w.forecast[i].label_cond, "");
+            lv_label_set_text(w.forecast[i].label_hi,   "--\xc2\xb0");
+            lv_label_set_text(w.forecast[i].label_lo,   "--\xc2\xb0");
+        }
+    }
+
+    // Status bar
+    if (w.label_status_left) {
+        if (aircraftCount > 0) {
+            char ts[16];
+            struct tm ti;
+            getLocalTime(&ti);
+            strftime(ts, sizeof(ts), "%H:%M", &ti);
+            snprintf(buf, sizeof(buf), "OPENSKY OK \xc2\xb7 %s", ts);
+            lv_label_set_text(w.label_status_left, buf);
+        } else {
+            lv_label_set_text(w.label_status_left, "NO AIRCRAFT DETECTED");
+        }
+    }
+    if (w.label_status_live) {
+        if (aircraftCount > 0) {
+            lv_obj_set_style_text_color(w.label_status_live, COLOR_SUCCESS, 0);
+            lv_label_set_text(w.label_status_live, "\xe2\x97\x8f LIVE");
+        } else {
+            lv_obj_set_style_text_color(w.label_status_live, COLOR_TEXT_DIM, 0);
+            lv_label_set_text(w.label_status_live, "\xe2\x97\x8f IDLE");
+        }
+    }
 }
 
 void LVGLDisplayManager::build_home_screen() {
     screen_home = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen_home, COLOR_BG, 0);
-    lv_obj_set_style_bg_grad_dir(screen_home, LV_GRAD_DIR_NONE, 0);
+    lv_obj_set_style_bg_opa(screen_home, LV_OPA_COVER, 0);
 
-    buildTopBar(screen_home);
-    buildWeatherCard(screen_home);
-    buildAircraftCard(screen_home);
+    buildTopBar(screen_home, homeWidgets);
+    buildStatusBar(screen_home, homeWidgets);
 
-    label_status_home = lv_label_create(screen_home);
-    lv_obj_set_style_text_font(label_status_home, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(label_status_home, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_status_home, "");
-    lv_obj_align(label_status_home, LV_ALIGN_BOTTOM_LEFT, 20, -12);
+    // Body: 800 x 396px, between top bar (58) and status bar (26)
+    lv_obj_t* body = lv_obj_create(screen_home);
+    lv_obj_set_size(body, hal::Elecrow5Inch::PANEL_WIDTH, 396);
+    lv_obj_set_pos(body, 0, 58);
+    lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(body, 0, 0);
+    lv_obj_set_style_pad_all(body, 0, 0);
+    lv_obj_set_style_radius(body, 0, 0);
+    lv_obj_clear_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_layout(body, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(body, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(body, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+
+    // Weather panel (left, fills remaining space)
+    lv_obj_t* weather_col = lv_obj_create(body);
+    lv_obj_set_flex_grow(weather_col, 1);
+    lv_obj_set_height(weather_col, 396);
+    buildWeatherPanel(weather_col, homeWidgets);
+
+    // Radar panel (right, fixed 310px)
+    lv_obj_t* radar_col = lv_obj_create(body);
+    lv_obj_set_size(radar_col, 310, 396);
+    buildRadarPanel(radar_col);
 }
 
-// Build aircraft detail screen
+void LVGLDisplayManager::buildRadarPanel(lv_obj_t* parent) {
+    lv_obj_set_style_bg_color(parent, COLOR_PANEL, 0);
+    lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_side(parent, LV_BORDER_SIDE_LEFT, 0);
+    lv_obj_set_style_border_color(parent, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(parent, 1, 0);
+    lv_obj_set_style_radius(parent, 0, 0);
+    lv_obj_set_style_pad_all(parent, 10, 0);
+    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_set_layout(parent, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(parent, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(parent, 8, 0);
+    lv_obj_set_style_pad_column(parent, 8, 0);
+
+    // Section header
+    lv_obj_t* hdr = lv_label_create(parent);
+    lv_obj_set_style_text_font(hdr, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(hdr, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(hdr, "AREA CONTACTS");
+
+    // Radar circle (190x190)
+    radar_container = lv_obj_create(parent);
+    lv_obj_set_size(radar_container, 190, 190);
+    lv_obj_set_style_radius(radar_container, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(radar_container, COLOR_INSET, 0);
+    lv_obj_set_style_bg_opa(radar_container, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(radar_container, COLOR_BORDER_ACCENT, 0);
+    lv_obj_set_style_border_width(radar_container, 1, 0);
+    lv_obj_set_style_pad_all(radar_container, 0, 0);
+    lv_obj_clear_flag(radar_container, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
+
+    // Range rings at 33% and 66% of radius
+    const int ring_sizes[2] = { 64, 126 };
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t* ring = lv_obj_create(radar_container);
+        lv_obj_set_size(ring, ring_sizes[i], ring_sizes[i]);
+        lv_obj_center(ring);
+        lv_obj_set_style_radius(ring, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_opa(ring, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_color(ring, lv_color_hex(0x1a3048), 0);
+        lv_obj_set_style_border_width(ring, 1, 0);
+        lv_obj_clear_flag(ring, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
+    }
+
+    // Home dot (center, 8px cyan)
+    lv_obj_t* home_dot = lv_obj_create(radar_container);
+    lv_obj_set_size(home_dot, 8, 8);
+    lv_obj_center(home_dot);
+    lv_obj_set_style_radius(home_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(home_dot, COLOR_ACCENT, 0);
+    lv_obj_set_style_border_width(home_dot, 0, 0);
+    lv_obj_clear_flag(home_dot, LV_OBJ_FLAG_CLICKABLE);
+
+    // Pre-create aircraft blips (all hidden)
+    for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
+        radar_blips[i] = lv_obj_create(radar_container);
+        lv_obj_set_size(radar_blips[i], 8, 8);
+        lv_obj_set_style_radius(radar_blips[i], LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(radar_blips[i], COLOR_ACCENT, 0);
+        lv_obj_set_style_border_width(radar_blips[i], 0, 0);
+        lv_obj_set_pos(radar_blips[i], 91, 91);
+        lv_obj_add_flag(radar_blips[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(radar_blips[i], LV_OBJ_FLAG_CLICKABLE);
+    }
+
+    // Contact count
+    label_contact_count = lv_label_create(parent);
+    lv_obj_set_style_text_font(label_contact_count, &lv_font_montserrat_26, 0);
+    lv_obj_set_style_text_color(label_contact_count, COLOR_ACCENT, 0);
+    lv_label_set_text(label_contact_count, "0");
+
+    lv_obj_t* lbl_units = lv_label_create(parent);
+    lv_obj_set_style_text_font(lbl_units, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_units, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(lbl_units, "CONTACTS");
+
+    // VIEW AIRCRAFT button
+    btn_view_planes = lv_button_create(parent);
+    lv_obj_set_size(btn_view_planes, 220, 36);
+    lv_obj_set_style_bg_color(btn_view_planes, COLOR_ACCENT, 0);
+    lv_obj_set_style_radius(btn_view_planes, 4, 0);
+    lv_obj_add_event_cb(btn_view_planes, event_btn_view_planes, LV_EVENT_CLICKED, this);
+
+    lv_obj_t* btn_lbl = lv_label_create(btn_view_planes);
+    lv_obj_set_style_text_font(btn_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(btn_lbl, COLOR_TEXT_ON_ACCENT, 0);
+    lv_label_set_text(btn_lbl, LV_SYMBOL_RIGHT "  VIEW AIRCRAFT");
+    lv_obj_center(btn_lbl);
+
+    // Tapping anywhere on panel navigates to aircraft list
+    lv_obj_add_event_cb(parent, event_btn_view_planes, LV_EVENT_CLICKED, this);
+}
+
+void LVGLDisplayManager::update_home_screen(const WeatherData& weather,
+                                             const Aircraft* aircraft,
+                                             int aircraftCount) {
+    // Switch home screen variant if aircraft count changed
+    bool nowHas = (aircraftCount > 0);
+    if (nowHas != homeHasAircraft) {
+        homeHasAircraft = nowHas;
+        lv_screen_load(homeHasAircraft ? screen_home : screen_home_empty);
+    }
+
+    // Update weather labels on whichever screen is active
+    WeatherWidgets& w = homeHasAircraft ? homeWidgets : emptyWidgets;
+    update_clock(w);
+    updateWeatherWidgets(w, weather, aircraftCount);
+
+    if (!homeHasAircraft) return;
+
+    // Update radar panel
+    char count_buf[8];
+    snprintf(count_buf, sizeof(count_buf), "%d", aircraftCount);
+    lv_label_set_text(label_contact_count, count_buf);
+
+    for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
+        if (!radar_blips[i]) continue;
+
+        if (aircraft && i < aircraftCount && aircraft[i].valid) {
+            const Aircraft& a = aircraft[i];
+            float distNm = GeoUtils::distanceNm(
+                Config::HOME_LAT, Config::HOME_LON,
+                a.latitude, a.longitude);
+            float bearing = GeoUtils::bearingDeg(
+                Config::HOME_LAT, Config::HOME_LON,
+                a.latitude, a.longitude);
+
+            auto pos = GeoUtils::blipPosition(distNm, bearing,
+                                               Config::RADAR_MAX_RANGE_NM, 95, 6);
+            lv_obj_set_pos(radar_blips[i], pos.x - 4, pos.y - 4);
+
+            // Amber for low altitude (<5000 ft), cyan otherwise
+            float altFt = a.altitude * 3.28084f;
+            lv_color_t blipColor = (altFt > 0 && altFt < 5000.0f) ? COLOR_AMBER : COLOR_ACCENT;
+            lv_obj_set_style_bg_color(radar_blips[i], blipColor, 0);
+            lv_obj_remove_flag(radar_blips[i], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(radar_blips[i], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
+void LVGLDisplayManager::build_home_empty_screen() {
+    screen_home_empty = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen_home_empty, COLOR_BG, 0);
+    lv_obj_set_style_bg_opa(screen_home_empty, LV_OPA_COVER, 0);
+
+    buildTopBar(screen_home_empty, emptyWidgets);
+    buildStatusBar(screen_home_empty, emptyWidgets);
+
+    // Body: full 800px width, two-column layout
+    lv_obj_t* body = lv_obj_create(screen_home_empty);
+    lv_obj_set_size(body, hal::Elecrow5Inch::PANEL_WIDTH, 396);
+    lv_obj_set_pos(body, 0, 58);
+    lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(body, 0, 0);
+    lv_obj_set_style_pad_all(body, 0, 0);
+    lv_obj_set_style_radius(body, 0, 0);
+    lv_obj_clear_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_layout(body, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(body, LV_FLEX_FLOW_ROW);
+
+    // Left column: current conditions (340px)
+    lv_obj_t* left_col = lv_obj_create(body);
+    lv_obj_set_size(left_col, 340, 396);
+    lv_obj_set_style_bg_opa(left_col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(left_col, 0, 0);
+    lv_obj_set_style_pad_hor(left_col, 20, 0);
+    lv_obj_set_style_pad_ver(left_col, 20, 0);
+    lv_obj_clear_flag(left_col, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Temperature (48px bold)
+    emptyWidgets.label_temperature = lv_label_create(left_col);
+    lv_obj_set_style_text_font(emptyWidgets.label_temperature, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(emptyWidgets.label_temperature, COLOR_TEXT_PRIMARY, 0);
+    lv_label_set_text(emptyWidgets.label_temperature, "--\xc2\xb0""F");
+    lv_obj_set_pos(emptyWidgets.label_temperature, 0, 0);
+
+    // Condition (16px secondary)
+    emptyWidgets.label_weather_desc = lv_label_create(left_col);
+    lv_obj_set_style_text_font(emptyWidgets.label_weather_desc, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(emptyWidgets.label_weather_desc, COLOR_TEXT_SECONDARY, 0);
+    lv_label_set_text(emptyWidgets.label_weather_desc, "Loading...");
+    lv_obj_set_pos(emptyWidgets.label_weather_desc, 0, 62);
+
+    // Feels-like (12px dim)
+    emptyWidgets.label_feels_like = lv_label_create(left_col);
+    lv_obj_set_style_text_font(emptyWidgets.label_feels_like, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(emptyWidgets.label_feels_like, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(emptyWidgets.label_feels_like, "Feels: --\xc2\xb0""F");
+    lv_obj_set_pos(emptyWidgets.label_feels_like, 0, 84);
+
+    // Hi/Lo (12px dim)
+    emptyWidgets.label_temp_range = lv_label_create(left_col);
+    lv_obj_set_style_text_font(emptyWidgets.label_temp_range, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(emptyWidgets.label_temp_range, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(emptyWidgets.label_temp_range, "H: --\xc2\xb0  L: --\xc2\xb0");
+    lv_obj_set_pos(emptyWidgets.label_temp_range, 0, 102);
+
+    // Divider
+    lv_obj_t* div = lv_obj_create(left_col);
+    lv_obj_set_size(div, 300, 1);
+    lv_obj_set_pos(div, 0, 124);
+    lv_obj_set_style_bg_color(div, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(div, 0, 0);
+    lv_obj_clear_flag(div, LV_OBJ_FLAG_CLICKABLE);
+
+    // Wind
+    lv_obj_t* lbl_wind_hdr = lv_label_create(left_col);
+    lv_obj_set_style_text_font(lbl_wind_hdr, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_wind_hdr, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(lbl_wind_hdr, "WIND");
+    lv_obj_set_pos(lbl_wind_hdr, 0, 134);
+
+    emptyWidgets.label_wind = lv_label_create(left_col);
+    lv_obj_set_style_text_font(emptyWidgets.label_wind, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(emptyWidgets.label_wind, COLOR_TEXT_PRIMARY, 0);
+    lv_label_set_text(emptyWidgets.label_wind, "-- mph");
+    lv_obj_set_pos(emptyWidgets.label_wind, 0, 150);
+
+    // Humidity
+    lv_obj_t* lbl_hum_hdr = lv_label_create(left_col);
+    lv_obj_set_style_text_font(lbl_hum_hdr, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_hum_hdr, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(lbl_hum_hdr, "HUMIDITY");
+    lv_obj_set_pos(lbl_hum_hdr, 100, 134);
+
+    emptyWidgets.label_humidity_val = lv_label_create(left_col);
+    lv_obj_set_style_text_font(emptyWidgets.label_humidity_val, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(emptyWidgets.label_humidity_val, COLOR_TEXT_PRIMARY, 0);
+    lv_label_set_text(emptyWidgets.label_humidity_val, "--%");
+    lv_obj_set_pos(emptyWidgets.label_humidity_val, 100, 150);
+
+    // Sunrise/Sunset (amber, 14px)
+    emptyWidgets.label_sunrise = lv_label_create(left_col);
+    lv_obj_set_style_text_font(emptyWidgets.label_sunrise, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(emptyWidgets.label_sunrise, COLOR_AMBER, 0);
+    lv_label_set_text(emptyWidgets.label_sunrise, LV_SYMBOL_UP " --:--");
+    lv_obj_set_pos(emptyWidgets.label_sunrise, 0, 180);
+
+    emptyWidgets.label_sunset = lv_label_create(left_col);
+    lv_obj_set_style_text_font(emptyWidgets.label_sunset, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(emptyWidgets.label_sunset, COLOR_AMBER, 0);
+    lv_label_set_text(emptyWidgets.label_sunset, LV_SYMBOL_DOWN " --:--");
+    lv_obj_set_pos(emptyWidgets.label_sunset, 80, 180);
+
+    // No-contacts watermark
+    lv_obj_t* watermark = lv_label_create(screen_home_empty);
+    lv_obj_set_style_text_font(watermark, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(watermark, COLOR_BORDER, 0);
+    lv_label_set_text(watermark, "NO CONTACTS IN RANGE");
+    lv_obj_align(watermark, LV_ALIGN_BOTTOM_MID, 0, -32);
+
+    // Right column: 5-day forecast (flex-fill)
+    lv_obj_t* right_col = lv_obj_create(body);
+    lv_obj_set_flex_grow(right_col, 1);
+    lv_obj_set_height(right_col, 396);
+    lv_obj_set_style_bg_opa(right_col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_side(right_col, LV_BORDER_SIDE_LEFT, 0);
+    lv_obj_set_style_border_color(right_col, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(right_col, 1, 0);
+    lv_obj_set_style_pad_hor(right_col, 20, 0);
+    lv_obj_set_style_pad_ver(right_col, 16, 0);
+    lv_obj_clear_flag(right_col, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t* fc_hdr = lv_label_create(right_col);
+    lv_obj_set_style_text_font(fc_hdr, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(fc_hdr, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(fc_hdr, "5-DAY FORECAST");
+    lv_obj_set_pos(fc_hdr, 0, 0);
+
+    lv_obj_t* fc_div = lv_obj_create(right_col);
+    lv_obj_set_size(fc_div, LV_PCT(100), 1);
+    lv_obj_set_pos(fc_div, 0, 18);
+    lv_obj_set_style_bg_color(fc_div, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(fc_div, 0, 0);
+    lv_obj_clear_flag(fc_div, LV_OBJ_FLAG_CLICKABLE);
+
+    for (int i = 0; i < 5; i++) {
+        int y = 26 + i * 60;
+        WeatherWidgets::ForecastRow& row = emptyWidgets.forecast[i];
+
+        row.container = lv_obj_create(right_col);
+        lv_obj_set_size(row.container, LV_PCT(100), 54);
+        lv_obj_set_pos(row.container, 0, y);
+        lv_obj_set_style_bg_opa(row.container, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_side(row.container, LV_BORDER_SIDE_BOTTOM, 0);
+        lv_obj_set_style_border_color(row.container, COLOR_BORDER, 0);
+        lv_obj_set_style_border_width(row.container, 1, 0);
+        lv_obj_set_style_radius(row.container, 0, 0);
+        lv_obj_set_style_pad_all(row.container, 0, 0);
+        lv_obj_clear_flag(row.container, LV_OBJ_FLAG_SCROLLABLE);
+
+        row.label_day = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_day, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(row.label_day, COLOR_TEXT_SECONDARY, 0);
+        lv_label_set_text(row.label_day, "---");
+        lv_obj_align(row.label_day, LV_ALIGN_LEFT_MID, 0, 0);
+
+        row.label_cond = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_cond, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(row.label_cond, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(row.label_cond, "");
+        lv_obj_align(row.label_cond, LV_ALIGN_CENTER, 0, 0);
+
+        row.label_hi = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_hi, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(row.label_hi, COLOR_TEXT_PRIMARY, 0);
+        lv_label_set_text(row.label_hi, "--\xc2\xb0");
+        lv_obj_align(row.label_hi, LV_ALIGN_RIGHT_MID, -30, 0);
+
+        row.label_lo = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_lo, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(row.label_lo, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(row.label_lo, "--\xc2\xb0");
+        lv_obj_align(row.label_lo, LV_ALIGN_RIGHT_MID, 0, 0);
+    }
+}
+
+void LVGLDisplayManager::build_no_aircraft_screen() {
+    // Backward-compat stub: the no-aircraft state is now handled by screen_home_empty,
+    // built in build_home_empty_screen(). Nothing to do here.
+}
+
 void LVGLDisplayManager::build_aircraft_screen() {
     screen_aircraft = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen_aircraft, COLOR_BG, 0);
-    lv_obj_set_style_bg_grad_dir(screen_aircraft, LV_GRAD_DIR_NONE, 0);
-    
-    // Back button
-    btn_back_home = lv_button_create(screen_aircraft);
-    lv_obj_set_size(btn_back_home, 120, 50);
-    lv_obj_align(btn_back_home, LV_ALIGN_TOP_LEFT, 20, 20);
-    lv_obj_set_style_bg_color(btn_back_home, COLOR_PANEL, 0);
-    lv_obj_set_style_border_color(btn_back_home, COLOR_BORDER, 0);
-    lv_obj_set_style_border_width(btn_back_home, 2, 0);
+    lv_obj_set_style_bg_opa(screen_aircraft, LV_OPA_COVER, 0);
+
+    // === TOP BAR (70px — slightly taller than home) ===
+    lv_obj_t* topbar = lv_obj_create(screen_aircraft);
+    lv_obj_set_size(topbar, hal::Elecrow5Inch::PANEL_WIDTH, 70);
+    lv_obj_set_pos(topbar, 0, 0);
+    lv_obj_set_style_bg_color(topbar, COLOR_TOPBAR, 0);
+    lv_obj_set_style_border_side(topbar, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_color(topbar, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(topbar, 1, 0);
+    lv_obj_set_style_radius(topbar, 0, 0);
+    lv_obj_set_style_pad_all(topbar, 0, 0);
+    lv_obj_clear_flag(topbar, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Back button (left)
+    btn_back_home = lv_button_create(topbar);
+    lv_obj_set_size(btn_back_home, 90, 42);
+    lv_obj_align(btn_back_home, LV_ALIGN_LEFT_MID, 16, 0);
+    lv_obj_set_style_bg_opa(btn_back_home, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_color(btn_back_home, COLOR_ACCENT, 0);
+    lv_obj_set_style_border_width(btn_back_home, 1, 0);
+    lv_obj_set_style_border_opa(btn_back_home, 80, 0);
+    lv_obj_set_style_radius(btn_back_home, 4, 0);
     lv_obj_add_event_cb(btn_back_home, event_btn_back_home, LV_EVENT_CLICKED, this);
-    
-    lv_obj_t* back_label = lv_label_create(btn_back_home);
-    lv_label_set_text(back_label, LV_SYMBOL_LEFT " Back");
-    lv_obj_center(back_label);
 
-    label_status_aircraft = lv_label_create(screen_aircraft);
-    lv_obj_set_style_text_font(label_status_aircraft, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(label_status_aircraft, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_status_aircraft, "");
-    lv_obj_align(label_status_aircraft, LV_ALIGN_BOTTOM_LEFT, 20, -12);
+    lv_obj_t* back_lbl = lv_label_create(btn_back_home);
+    lv_obj_set_style_text_font(back_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(back_lbl, COLOR_ACCENT, 0);
+    lv_label_set_text(back_lbl, LV_SYMBOL_LEFT " BACK");
+    lv_obj_center(back_lbl);
 
-    // Aircraft info card
-    lv_obj_t* aircraft_card = lv_obj_create(screen_aircraft);
-    lv_obj_set_size(aircraft_card, 760, 370);
-    lv_obj_align(aircraft_card, LV_ALIGN_CENTER, 0, 10);
-    lv_obj_set_style_bg_color(aircraft_card, COLOR_PANEL, 0);
-    lv_obj_set_style_border_color(aircraft_card, COLOR_BORDER, 0);
-    lv_obj_set_style_border_width(aircraft_card, 2, 0);
-    lv_obj_set_style_shadow_width(aircraft_card, 20, 0);
-    lv_obj_set_style_shadow_color(aircraft_card, lv_color_black(), 0);
-    lv_obj_set_style_shadow_opa(aircraft_card, LV_OPA_30, 0);
-    lv_obj_set_style_radius(aircraft_card, 16, 0);
-    lv_obj_set_style_pad_all(aircraft_card, 30, 0);
-    
-    // Callsign (large)
-    label_callsign = lv_label_create(aircraft_card);
-    lv_obj_set_style_text_font(label_callsign, &lv_font_montserrat_48, 0);
+    // Callsign (center, 36px bold cyan)
+    label_callsign = lv_label_create(topbar);
+    lv_obj_set_style_text_font(label_callsign, &lv_font_montserrat_36, 0);
     lv_obj_set_style_text_color(label_callsign, COLOR_ACCENT, 0);
     lv_label_set_text(label_callsign, "---");
-    lv_obj_align(label_callsign, LV_ALIGN_TOP_LEFT, 0, 0);
-    
-    // Aircraft type
-    label_aircraft_type = lv_label_create(aircraft_card);
-    lv_obj_set_style_text_font(label_aircraft_type, &lv_font_montserrat_18, 0);
-    lv_obj_set_style_text_color(label_aircraft_type, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_aircraft_type, "Aircraft Type");
-    lv_obj_align(label_aircraft_type, LV_ALIGN_TOP_LEFT, 0, 70);
+    lv_obj_align(label_callsign, LV_ALIGN_CENTER, 0, 0);
 
-    // Airline
-    label_airline = lv_label_create(aircraft_card);
-    lv_obj_set_style_text_font(label_airline, &lv_font_montserrat_18, 0);
-    lv_obj_set_style_text_color(label_airline, COLOR_TEXT_PRIMARY, 0);
-    lv_label_set_text(label_airline, "Airline Name");
-    lv_obj_align(label_airline, LV_ALIGN_TOP_LEFT, 0, 95);
+    // Distance + bearing (right side, stacked)
+    label_distance = lv_label_create(topbar);
+    lv_obj_set_style_text_font(label_distance, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(label_distance, COLOR_TEXT_PRIMARY, 0);
+    lv_label_set_text(label_distance, "-- nm \xc2\xb7 --\xc2\xb0");
+    lv_obj_align(label_distance, LV_ALIGN_RIGHT_MID, -18, -8);
 
-    // Route
-    label_route = lv_label_create(aircraft_card);
-    lv_obj_set_style_text_font(label_route, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(label_route, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_route, "Origin -> Destination");
-    lv_obj_align(label_route, LV_ALIGN_TOP_LEFT, 0, 120);
-    
-    // Grid for metrics
-    int y_offset = 160;
-    int spacing = 50;
-    
-    label_altitude = lv_label_create(aircraft_card);
-    lv_obj_set_style_text_font(label_altitude, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(label_altitude, COLOR_TEXT_PRIMARY, 0);
-    lv_label_set_text(label_altitude, "Altitude: --- ft");
-    lv_obj_align(label_altitude, LV_ALIGN_TOP_LEFT, 0, y_offset);
-    
-    label_velocity = lv_label_create(aircraft_card);
-    lv_obj_set_style_text_font(label_velocity, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(label_velocity, COLOR_TEXT_PRIMARY, 0);
-    lv_label_set_text(label_velocity, "Speed: --- kts");
-    lv_obj_align(label_velocity, LV_ALIGN_TOP_LEFT, 0, y_offset + spacing);
-    
-    label_heading = lv_label_create(aircraft_card);
-    lv_obj_set_style_text_font(label_heading, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(label_heading, COLOR_TEXT_PRIMARY, 0);
-    lv_label_set_text(label_heading, "Heading: ---°");
-    lv_obj_align(label_heading, LV_ALIGN_TOP_LEFT, 0, y_offset + spacing * 2);
-    
-    label_latitude = lv_label_create(aircraft_card);
-    lv_obj_set_style_text_font(label_latitude, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(label_latitude, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_latitude, "Lat: ---");
-    lv_obj_align(label_latitude, LV_ALIGN_BOTTOM_LEFT, 0, -20);
-    
-    label_longitude = lv_label_create(aircraft_card);
-    lv_obj_set_style_text_font(label_longitude, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(label_longitude, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_longitude, "Lon: ---");
-    lv_obj_align(label_longitude, LV_ALIGN_BOTTOM_LEFT, 250, -20);
-}
+    lv_obj_t* lbl_loc = lv_label_create(topbar);
+    lv_obj_set_style_text_font(lbl_loc, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_loc, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(lbl_loc, "FROM " WEATHER_CITY_MACRO);
+    lv_obj_align(lbl_loc, LV_ALIGN_RIGHT_MID, -18, 12);
 
-// Build no aircraft screen
-void LVGLDisplayManager::build_no_aircraft_screen() {
-    screen_no_aircraft = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen_no_aircraft, COLOR_BG, 0);
-    lv_obj_set_style_bg_grad_dir(screen_no_aircraft, LV_GRAD_DIR_NONE, 0);
-    
-    // Back button
-    lv_obj_t* btn_back = lv_button_create(screen_no_aircraft);
-    lv_obj_set_size(btn_back, 120, 50);
-    lv_obj_align(btn_back, LV_ALIGN_TOP_LEFT, 20, 20);
-    lv_obj_set_style_bg_color(btn_back, COLOR_PANEL, 0);
-    lv_obj_set_style_border_color(btn_back, COLOR_BORDER, 0);
-    lv_obj_set_style_border_width(btn_back, 2, 0);
-    lv_obj_add_event_cb(btn_back, event_btn_back_home, LV_EVENT_CLICKED, this);
-    
-    lv_obj_t* back_label = lv_label_create(btn_back);
-    lv_label_set_text(back_label, LV_SYMBOL_LEFT " Back");
-    lv_obj_center(back_label);
-    
-    // Message
-    lv_obj_t* msg_label = lv_label_create(screen_no_aircraft);
-    lv_obj_set_style_text_font(msg_label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(msg_label, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(msg_label, "No Aircraft Detected");
-    lv_obj_center(msg_label);
-}
+    // === STATUS BAR (26px, bottom) ===
+    lv_obj_t* sbar = lv_obj_create(screen_aircraft);
+    lv_obj_set_size(sbar, hal::Elecrow5Inch::PANEL_WIDTH, 26);
+    lv_obj_align(sbar, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_color(sbar, COLOR_STATUSBAR, 0);
+    lv_obj_set_style_border_side(sbar, LV_BORDER_SIDE_TOP, 0);
+    lv_obj_set_style_border_color(sbar, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(sbar, 1, 0);
+    lv_obj_set_style_radius(sbar, 0, 0);
+    lv_obj_set_style_pad_hor(sbar, 12, 0);
+    lv_obj_clear_flag(sbar, LV_OBJ_FLAG_SCROLLABLE);
 
-// Update home screen
-void LVGLDisplayManager::update_home_screen(const WeatherData& weather, int aircraftCount) {
-    if (!screen_home) return;
-    
-    // Update time/date
-    update_clock();
-    
-    // Update temperature
-    char temp_buf[32];
-    snprintf(temp_buf, sizeof(temp_buf), "%.0f°F", weather.temperature);
-    lv_label_set_text(label_temperature, temp_buf);
-    
-    // Update weather description
-    lv_label_set_text(label_weather_desc, weather.description.c_str());
-    
-    // Update Feels Like
-    char feels_buf[32];
-    snprintf(feels_buf, sizeof(feels_buf), "Feels: %.0f°F", weather.feelsLike);
-    lv_label_set_text(label_feels_like, feels_buf);
+    label_status_aircraft = lv_label_create(sbar);
+    lv_obj_set_style_text_font(label_status_aircraft, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(label_status_aircraft, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(label_status_aircraft, "");
+    lv_obj_align(label_status_aircraft, LV_ALIGN_LEFT_MID, 0, 0);
 
-    // Update Temp Range
-    char range_buf[32];
-    snprintf(range_buf, sizeof(range_buf), "H: %.0f° L: %.0f°", weather.tempMax, weather.tempMin);
-    lv_label_set_text(label_temp_range, range_buf);
-    
-    // Update humidity arc
-    lv_arc_set_value(arc_humidity, (int)weather.humidity);
-    char hum_buf[16];
-    snprintf(hum_buf, sizeof(hum_buf), "%.0f%%", weather.humidity);
-    lv_label_set_text(label_humidity, hum_buf);
-    
-    // Update wind
-    char wind_buf[32];
-    snprintf(wind_buf, sizeof(wind_buf), "Wind: %.0f mph", weather.windSpeed);
-    lv_label_set_text(label_wind, wind_buf);
-    
-    // Update sunrise/sunset
-    char sunrise_buf[32];
-    snprintf(sunrise_buf, sizeof(sunrise_buf), LV_SYMBOL_UP " %s", formatTime(weather.sunrise).c_str());
-    lv_label_set_text(label_sunrise, sunrise_buf);
-    
-    char sunset_buf[32];
-    snprintf(sunset_buf, sizeof(sunset_buf), LV_SYMBOL_DOWN " %s", formatTime(weather.sunset).c_str());
-    lv_label_set_text(label_sunset, sunset_buf);
-    
-    // Update Forecast
-    for(int i=0; i<5; i++) {
-        if (i < weather.forecast.size()) {
-            const auto& day = weather.forecast[i];
-            lv_label_set_text(forecast_rows[i].label_day, day.dayName.c_str());
-            lv_label_set_text(forecast_rows[i].label_condition, day.condition.c_str());
-            
-            char f_temp_buf[32];
-            snprintf(f_temp_buf, sizeof(f_temp_buf), "%.0f/%.0f", day.tempMax, day.tempMin);
-            lv_label_set_text(forecast_rows[i].label_temp, f_temp_buf);
-        } else {
-            lv_label_set_text(forecast_rows[i].label_day, "-");
-            lv_label_set_text(forecast_rows[i].label_condition, "");
-            lv_label_set_text(forecast_rows[i].label_temp, "--/--");
-        }
-    }
-    
-    // Update aircraft count
-    char count_buf[16];
-    snprintf(count_buf, sizeof(count_buf), "%d", aircraftCount);
-    lv_label_set_text(label_plane_count, count_buf);
-    
-    // Enable/disable view button based on count
-    if (aircraftCount > 0) {
-        lv_obj_remove_state(btn_view_planes, LV_STATE_DISABLED);
-    } else {
-        lv_obj_add_state(btn_view_planes, LV_STATE_DISABLED);
-    }
+    // === BODY (top:70, bottom:26, height:384, padding 14 18) ===
+    lv_obj_t* body = lv_obj_create(screen_aircraft);
+    lv_obj_set_size(body, hal::Elecrow5Inch::PANEL_WIDTH, 384);
+    lv_obj_set_pos(body, 0, 70);
+    lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(body, 0, 0);
+    lv_obj_set_style_pad_hor(body, 18, 0);
+    lv_obj_set_style_pad_ver(body, 14, 0);
+    lv_obj_set_style_radius(body, 0, 0);
+    lv_obj_clear_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_layout(body, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(body, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(body, 10, 0);
+    lv_obj_set_style_pad_column(body, 10, 0);
+
+    // === ROW 1: Identity cards (flex row) ===
+    lv_obj_t* row1 = lv_obj_create(body);
+    lv_obj_set_size(row1, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(row1, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(row1, 0, 0);
+    lv_obj_set_style_pad_all(row1, 0, 0);
+    lv_obj_set_style_radius(row1, 0, 0);
+    lv_obj_clear_flag(row1, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_layout(row1, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(row1, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row1, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(row1, 10, 0);
+    lv_obj_set_style_pad_column(row1, 10, 0);
+
+    // Helper lambda: create an identity card
+    auto makeCard = [&](lv_obj_t* parent, const char* labelText, lv_obj_t** valueLabel,
+                        bool isSquawk = false) {
+        lv_obj_t* card = lv_obj_create(parent);
+        lv_obj_set_size(card, LV_SIZE_CONTENT, 52);
+        lv_obj_set_style_bg_color(card, COLOR_PANEL, 0);
+        lv_obj_set_style_border_color(card, COLOR_BORDER, 0);
+        lv_obj_set_style_border_width(card, 1, 0);
+        lv_obj_set_style_radius(card, 4, 0);
+        lv_obj_set_style_pad_hor(card, 12, 0);
+        lv_obj_set_style_pad_ver(card, 6, 0);
+        lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t* lbl = lv_label_create(card);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(lbl, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(lbl, labelText);
+        lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 0, 0);
+
+        *valueLabel = lv_label_create(card);
+        lv_obj_set_style_text_font(*valueLabel, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_color(*valueLabel,
+            isSquawk ? COLOR_AMBER : COLOR_TEXT_PRIMARY, 0);
+        lv_label_set_text(*valueLabel, "--");
+        lv_obj_align(*valueLabel, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    };
+
+    makeCard(row1, "AIRLINE",  &label_airline);
+    makeCard(row1, "AIRCRAFT", &label_aircraft_type);
+    makeCard(row1, "SQUAWK",   &label_squawk, true);
+
+    // === ROW 2: Route block ===
+    lv_obj_t* route_block = lv_obj_create(body);
+    lv_obj_set_size(route_block, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(route_block, COLOR_INSET, 0);
+    lv_obj_set_style_border_color(route_block, COLOR_BORDER_ACCENT, 0);
+    lv_obj_set_style_border_width(route_block, 1, 0);
+    lv_obj_set_style_radius(route_block, 6, 0);
+    lv_obj_set_style_pad_hor(route_block, 18, 0);
+    lv_obj_set_style_pad_ver(route_block, 12, 0);
+    lv_obj_clear_flag(route_block, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t* route_hdr = lv_label_create(route_block);
+    lv_obj_set_style_text_font(route_hdr, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(route_hdr, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(route_hdr, "ROUTE");
+    lv_obj_align(route_hdr, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    label_route_main = lv_label_create(route_block);
+    lv_obj_set_style_text_font(label_route_main, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(label_route_main, COLOR_ACCENT, 0);
+    lv_label_set_text(label_route_main, "LOOKING UP...");
+    lv_obj_align(label_route_main, LV_ALIGN_TOP_LEFT, 0, 18);
+
+    label_route_sub = lv_label_create(route_block);
+    lv_obj_set_style_text_font(label_route_sub, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(label_route_sub, COLOR_TEXT_SECONDARY, 0);
+    lv_label_set_text(label_route_sub, "");
+    lv_obj_align(label_route_sub, LV_ALIGN_TOP_LEFT, 0, 52);
+
+    // === ROW 3: Instrument tiles ===
+    lv_obj_t* row3 = lv_obj_create(body);
+    lv_obj_set_flex_grow(row3, 1);
+    lv_obj_set_width(row3, LV_PCT(100));
+    lv_obj_set_style_bg_opa(row3, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(row3, 0, 0);
+    lv_obj_set_style_pad_all(row3, 0, 0);
+    lv_obj_set_style_radius(row3, 0, 0);
+    lv_obj_clear_flag(row3, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_layout(row3, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(row3, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row3, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    auto makeTile = [&](lv_obj_t* parent, const char* tileLabel, lv_obj_t** valueLabel) {
+        lv_obj_t* tile = lv_obj_create(parent);
+        lv_obj_set_flex_grow(tile, 1);
+        lv_obj_set_height(tile, LV_PCT(100));
+        lv_obj_set_style_bg_color(tile, COLOR_PANEL, 0);
+        lv_obj_set_style_border_color(tile, COLOR_BORDER, 0);
+        lv_obj_set_style_border_width(tile, 1, 0);
+        lv_obj_set_style_radius(tile, 5, 0);
+        lv_obj_set_style_pad_all(tile, 10, 0);
+        lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_layout(tile, LV_LAYOUT_FLEX);
+        lv_obj_set_flex_flow(tile, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(tile, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_row(tile, 6, 0);
+        lv_obj_set_style_pad_column(tile, 6, 0);
+
+        lv_obj_t* lbl = lv_label_create(tile);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(lbl, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(lbl, tileLabel);
+
+        *valueLabel = lv_label_create(tile);
+        lv_obj_set_style_text_font(*valueLabel, &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_color(*valueLabel, COLOR_TEXT_PRIMARY, 0);
+        lv_label_set_text(*valueLabel, "--");
+    };
+
+    makeTile(row3, "ALTITUDE",   &label_altitude);
+    makeTile(row3, "SPEED",      &label_velocity);
+    makeTile(row3, "HEADING",    &label_heading);
+    makeTile(row3, "VERT SPEED", &label_vert_speed);
 }
 
 // Update aircraft screen
 void LVGLDisplayManager::update_aircraft_screen(const Aircraft& aircraft) {
     if (!screen_aircraft) return;
-    
-    // Update callsign
+
     lv_label_set_text(label_callsign, aircraft.callsign.c_str());
-    
-    // Update aircraft type
-    lv_label_set_text(label_aircraft_type, aircraft.aircraftType.c_str());
 
-    // Update airline
-    lv_label_set_text(label_airline, aircraft.airline.length() > 0 ? aircraft.airline.c_str() : "Unknown Airline");
+    // Distance + bearing from home
+    float distNm = GeoUtils::distanceNm(
+        Config::HOME_LAT, Config::HOME_LON,
+        aircraft.latitude, aircraft.longitude);
+    float bearing = GeoUtils::bearingDeg(
+        Config::HOME_LAT, Config::HOME_LON,
+        aircraft.latitude, aircraft.longitude);
+    const char* card = GeoUtils::cardinalDir(bearing);
 
-    // Update route
+    char dist_buf[48];
+    snprintf(dist_buf, sizeof(dist_buf), "%.1f nm  \xc2\xb7  %.0f\xc2\xb0 %s", distNm, bearing, card);
+    lv_label_set_text(label_distance, dist_buf);
+
+    // Identity cards
+    lv_label_set_text(label_airline,
+        aircraft.airline.length() > 0 ? aircraft.airline.c_str() : "Unknown");
+    lv_label_set_text(label_aircraft_type,
+        aircraft.aircraftType.length() > 0 ? aircraft.aircraftType.c_str() : "Aircraft");
+    lv_label_set_text(label_squawk,
+        aircraft.squawk.length() > 0 ? aircraft.squawk.c_str() : "----");
+
+    // Route block
     if (aircraft.origin.length() > 0 && aircraft.destination.length() > 0) {
-        char route_buf[64];
-        snprintf(route_buf, sizeof(route_buf), "%s -> %s", aircraft.origin.c_str(), aircraft.destination.c_str());
-        lv_label_set_text(label_route, route_buf);
+        char route_buf[32];
+        snprintf(route_buf, sizeof(route_buf), "%s  \xe2\x86\x92  %s",
+                 aircraft.origin.c_str(), aircraft.destination.c_str());
+        lv_label_set_text(label_route_main, route_buf);
+        lv_obj_set_style_text_color(label_route_main, COLOR_ACCENT, 0);
+        lv_label_set_text(label_route_sub, "");
+    } else if (aircraft.callsign.length() > 0) {
+        lv_label_set_text(label_route_main, "LOOKING UP...");
+        lv_obj_set_style_text_color(label_route_main, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(label_route_sub, "");
     } else {
-        lv_label_set_text(label_route, "Route Unknown");
+        lv_label_set_text(label_route_main, "ROUTE UNAVAILABLE");
+        lv_obj_set_style_text_color(label_route_main, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(label_route_sub, "");
     }
-    
-    // Update altitude (m to ft)
-    char alt_buf[64];
-    snprintf(alt_buf, sizeof(alt_buf), "Altitude: %.0f ft", aircraft.altitude * 3.28084f);
+
+    // Altitude (m -> ft)
+    char alt_buf[24];
+    snprintf(alt_buf, sizeof(alt_buf), "%.0f ft", aircraft.altitude * 3.28084f);
     lv_label_set_text(label_altitude, alt_buf);
-    
-    // Update velocity (m/s to kts)
-    char vel_buf[64];
-    snprintf(vel_buf, sizeof(vel_buf), "Speed: %.0f kts", aircraft.velocity * 1.94384f);
+
+    // Speed (m/s -> kts)
+    char vel_buf[24];
+    snprintf(vel_buf, sizeof(vel_buf), "%.0f kts", aircraft.velocity * 1.94384f);
     lv_label_set_text(label_velocity, vel_buf);
-    
-    // Update heading
-    char head_buf[64];
-    snprintf(head_buf, sizeof(head_buf), "Heading: %.0f°", aircraft.heading);
+
+    // Heading + cardinal
+    char head_buf[24];
+    snprintf(head_buf, sizeof(head_buf), "%.0f\xc2\xb0 %s",
+             aircraft.heading, GeoUtils::cardinalDir(aircraft.heading));
     lv_label_set_text(label_heading, head_buf);
-    
-    // Update coordinates
-    char lat_buf[32];
-    snprintf(lat_buf, sizeof(lat_buf), "Lat: %.4f", aircraft.latitude);
-    lv_label_set_text(label_latitude, lat_buf);
-    
-    char lon_buf[32];
-    snprintf(lon_buf, sizeof(lon_buf), "Lon: %.4f", aircraft.longitude);
-    lv_label_set_text(label_longitude, lon_buf);
+
+    // Vertical speed (m/s -> fpm), color-coded
+    float fpm = aircraft.verticalRate * 196.85f;
+    char vs_buf[24];
+    snprintf(vs_buf, sizeof(vs_buf), "%+.0f fpm", fpm);
+    lv_label_set_text(label_vert_speed, vs_buf);
+    if (fpm > 50.0f) {
+        lv_obj_set_style_text_color(label_vert_speed, COLOR_SUCCESS, 0);
+    } else if (fpm < -50.0f) {
+        lv_obj_set_style_text_color(label_vert_speed, lv_color_hex(0xef4444), 0);
+    } else {
+        lv_obj_set_style_text_color(label_vert_speed, COLOR_TEXT_PRIMARY, 0);
+    }
 }
 
 // Update clock
@@ -769,7 +1209,7 @@ void LVGLDisplayManager::update_clock(WeatherWidgets& w) {
 // Main update function
 void LVGLDisplayManager::update(const WeatherData& weather, const Aircraft* aircraft, int aircraftCount) {
     if (currentScreen == SCREEN_HOME) {
-        update_home_screen(weather, aircraftCount);
+        update_home_screen(weather, aircraft, aircraftCount);
     } else if (currentScreen == SCREEN_AIRCRAFT_DETAIL && aircraft && aircraft->valid) {
         update_aircraft_screen(*aircraft);
     }
