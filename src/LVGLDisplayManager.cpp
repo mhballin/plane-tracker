@@ -132,34 +132,26 @@ LVGLDisplayManager::LVGLDisplayManager()
     , lv_display(nullptr)
     , lv_indev(nullptr)
     , screen_home(nullptr)
+    , screen_home_empty(nullptr)
     , screen_aircraft(nullptr)
-    , screen_no_aircraft(nullptr)
-    , label_time(nullptr)
-    , label_date(nullptr)
-    , label_temperature(nullptr)
-    , label_weather_desc(nullptr)
-    , label_feels_like(nullptr)   // New
-    , label_temp_range(nullptr)   // New
-    , label_humidity(nullptr)
-    , label_wind(nullptr)
-    , arc_humidity(nullptr)
-    , label_sunrise(nullptr)
-    , label_sunset(nullptr)
-    , label_plane_count(nullptr)
+    , radar_container(nullptr)
+    , label_contact_count(nullptr)
     , btn_view_planes(nullptr)
     , label_callsign(nullptr)
+    , label_distance(nullptr)
+    , label_airline(nullptr)
     , label_aircraft_type(nullptr)
-    , label_airline(nullptr)      // New
-    , label_route(nullptr)        // New
+    , label_squawk(nullptr)
+    , label_route_main(nullptr)
+    , label_route_sub(nullptr)
     , label_altitude(nullptr)
     , label_velocity(nullptr)
     , label_heading(nullptr)
-    , label_latitude(nullptr)
-    , label_longitude(nullptr)
-    , btn_back_home(nullptr)
-    , label_status_home(nullptr)
+    , label_vert_speed(nullptr)
     , label_status_aircraft(nullptr)
+    , btn_back_home(nullptr)
     , currentScreen(SCREEN_HOME)
+    , homeHasAircraft(false)
     , lastScreenChange(0)
     , lastUserInteraction(0)
     , statusMessage("")
@@ -167,6 +159,9 @@ LVGLDisplayManager::LVGLDisplayManager()
     , lastUpdateTime(0)
     , currentBrightness(255)
 {
+    for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
+        radar_blips[i] = nullptr;
+    }
     s_instance = this;
 }
 
@@ -219,12 +214,13 @@ bool LVGLDisplayManager::initialize() {
     
     // Build screens
     build_home_screen();
+    build_home_empty_screen();
     build_aircraft_screen();
-    build_no_aircraft_screen();
-    
-    // Load home screen
-    lv_screen_load(screen_home);
+
+    // Load appropriate home screen (no aircraft at boot)
+    lv_screen_load(screen_home_empty);
     currentScreen = SCREEN_HOME;
+    homeHasAircraft = false;
     lastUserInteraction = millis();
     
     Serial.println("[LVGL] Display initialized successfully");
@@ -264,25 +260,66 @@ void LVGLDisplayManager::touchpad_read(lv_indev_t* indev, lv_indev_data_t* data)
 }
 
 // Build home screen with modern card-based layout
-void LVGLDisplayManager::buildTopBar(lv_obj_t* screen) {
-    lv_obj_t* top_bar = lv_obj_create(screen);
-    lv_obj_set_size(top_bar, hal::Elecrow5Inch::PANEL_WIDTH, 80);
-    lv_obj_align(top_bar, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_opa(top_bar, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(top_bar, 0, 0);
-    lv_obj_set_style_radius(top_bar, 0, 0);
+void LVGLDisplayManager::buildTopBar(lv_obj_t* screen, WeatherWidgets& w) {
+    lv_obj_t* bar = lv_obj_create(screen);
+    lv_obj_set_size(bar, 800, 58);
+    lv_obj_set_pos(bar, 0, 0);
+    lv_obj_set_style_bg_color(bar, COLOR_TOPBAR, 0);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_side(bar, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_color(bar, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(bar, 1, 0);
+    lv_obj_set_style_radius(bar, 0, 0);
+    lv_obj_set_style_pad_all(bar, 0, 0);
+    lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
 
-    label_time = lv_label_create(top_bar);
-    lv_obj_set_style_text_font(label_time, &lv_font_montserrat_32, 0);
-    lv_obj_set_style_text_color(label_time, COLOR_TEXT_PRIMARY, 0);
-    lv_label_set_text(label_time, "00:00");
-    lv_obj_align(label_time, LV_ALIGN_LEFT_MID, 20, -5);
+    // Time — cyan, 28px bold, left side
+    w.label_time = lv_label_create(bar);
+    lv_obj_set_style_text_font(w.label_time, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(w.label_time, COLOR_ACCENT, 0);
+    lv_label_set_text(w.label_time, "00:00");
+    lv_obj_align(w.label_time, LV_ALIGN_LEFT_MID, 20, -8);
 
-    label_date = lv_label_create(top_bar);
-    lv_obj_set_style_text_font(label_date, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(label_date, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_date, "Mon, Jan 1");
-    lv_obj_align(label_date, LV_ALIGN_LEFT_MID, 20, 20);
+    // Date — secondary, 12px, below time
+    w.label_date = lv_label_create(bar);
+    lv_obj_set_style_text_font(w.label_date, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(w.label_date, COLOR_TEXT_SECONDARY, 0);
+    lv_label_set_text(w.label_date, "Mon, Jan 1");
+    lv_obj_align(w.label_date, LV_ALIGN_LEFT_MID, 20, 14);
+
+    // Location — dim, right side
+    lv_obj_t* lbl_loc = lv_label_create(bar);
+    lv_obj_set_style_text_font(lbl_loc, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_loc, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(lbl_loc, Config::WEATHER_CITY);
+    lv_obj_align(lbl_loc, LV_ALIGN_RIGHT_MID, -20, 0);
+}
+
+void LVGLDisplayManager::buildStatusBar(lv_obj_t* screen, WeatherWidgets& w) {
+    lv_obj_t* bar = lv_obj_create(screen);
+    lv_obj_set_size(bar, 800, 26);
+    lv_obj_align(bar, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_color(bar, COLOR_STATUSBAR, 0);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_side(bar, LV_BORDER_SIDE_TOP, 0);
+    lv_obj_set_style_border_color(bar, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(bar, 1, 0);
+    lv_obj_set_style_radius(bar, 0, 0);
+    lv_obj_set_style_pad_hor(bar, 12, 0);
+    lv_obj_set_style_pad_ver(bar, 0, 0);
+    lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+
+    w.label_status_left = lv_label_create(bar);
+    lv_obj_set_style_text_font(w.label_status_left, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(w.label_status_left, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(w.label_status_left, "INITIALIZING");
+    lv_obj_align(w.label_status_left, LV_ALIGN_LEFT_MID, 0, 0);
+
+    w.label_status_live = lv_label_create(bar);
+    lv_obj_set_style_text_font(w.label_status_live, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(w.label_status_live, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(w.label_status_live, "● IDLE");
+    lv_obj_align(w.label_status_live, LV_ALIGN_RIGHT_MID, 0, 0);
 }
 
 void LVGLDisplayManager::buildWeatherCard(lv_obj_t* screen) {
@@ -708,25 +745,21 @@ void LVGLDisplayManager::update_aircraft_screen(const Aircraft& aircraft) {
 }
 
 // Update clock
-void LVGLDisplayManager::update_clock() {
-    time_t now = time(nullptr);
+void LVGLDisplayManager::update_clock(WeatherWidgets& w) {
     struct tm timeinfo;
     if (!getLocalTime(&timeinfo)) return;
 
     char time_buf[16];
     strftime(time_buf, sizeof(time_buf), "%I:%M %p", &timeinfo);
-    lv_label_set_text(label_time, time_buf);
+    if (w.label_time) lv_label_set_text(w.label_time, time_buf);
 
     char date_buf[32];
     strftime(date_buf, sizeof(date_buf), "%a, %b %d", &timeinfo);
-    lv_label_set_text(label_date, date_buf);
+    if (w.label_date) lv_label_set_text(w.label_date, date_buf);
 
-    // Auto-clear status message after timeout
     if (statusClearTime > 0 && millis() >= statusClearTime) {
         statusClearTime = 0;
         statusMessage = "";
-        if (label_status_home)     lv_label_set_text(label_status_home,     "");
-        if (label_status_aircraft) lv_label_set_text(label_status_aircraft, "");
     }
 }
 
@@ -747,20 +780,20 @@ void LVGLDisplayManager::tick(uint32_t period_ms) {
 
 // Screen management
 void LVGLDisplayManager::setScreen(ScreenState screen) {
-    if (currentScreen == screen) return;
-    
-    currentScreen = screen;
+    ScreenState target = (screen == SCREEN_NO_AIRCRAFT) ? SCREEN_HOME : screen;
+    if (currentScreen == target) return;
+
+    currentScreen = target;
     lastScreenChange = millis();
-    
-    switch (screen) {
+
+    switch (target) {
         case SCREEN_HOME:
-            lv_screen_load(screen_home);
+            lv_screen_load(homeHasAircraft ? screen_home : screen_home_empty);
             break;
         case SCREEN_AIRCRAFT_DETAIL:
             lv_screen_load(screen_aircraft);
             break;
-        case SCREEN_NO_AIRCRAFT:
-            lv_screen_load(screen_no_aircraft);
+        default:
             break;
     }
 }
@@ -821,8 +854,9 @@ void LVGLDisplayManager::setLastUpdateTimestamp(time_t timestamp) {
 void LVGLDisplayManager::setStatusMessage(const String& msg) {
     statusMessage = msg;
     statusClearTime = millis() + Config::UI_STATUS_MS;
-    if (label_status_home)     lv_label_set_text(label_status_home,     msg.c_str());
-    if (label_status_aircraft) lv_label_set_text(label_status_aircraft, msg.c_str());
+    if (homeWidgets.label_status_left)  lv_label_set_text(homeWidgets.label_status_left,  msg.c_str());
+    if (emptyWidgets.label_status_left) lv_label_set_text(emptyWidgets.label_status_left, msg.c_str());
+    if (label_status_aircraft)          lv_label_set_text(label_status_aircraft,           msg.c_str());
 }
 
 // Touch processing (LVGL handles this automatically)
