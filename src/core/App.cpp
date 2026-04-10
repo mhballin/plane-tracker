@@ -21,10 +21,10 @@ App::App()
     , aircraftTaskId_(Scheduler::INVALID_TASK)
     , displayTaskId_(Scheduler::INVALID_TASK)
     , healthTaskId_(Scheduler::INVALID_TASK)
-    , serial_(nullptr)
     , routeCache_(nullptr)
     , routeFetchDone_(false)
-    , lastRouteFetchCallsign_("") {
+    , lastRouteFetchCallsign_("")
+    , serial_(nullptr) {
 }
 
 App::~App() {
@@ -253,12 +253,12 @@ void App::updateDisplay() {
                 routeFetchDone_ = false;
             }
             if (routeCache_ && !routeFetchDone_ && !cur.callsign.isEmpty()) {
-                routeFetchDone_ = true;
                 String org, dst, orgName, dstName;
                 if (routeCache_->lookup(cur.callsign, org, dst, orgName, dstName)) {
                     cur.origin      = org;
                     cur.destination = dst;
                 }
+                routeFetchDone_ = true;  // mark done after attempt (success or failure)
             }
 
             display_->update(currentWeather_, &cur, currentAircraftCount_);
