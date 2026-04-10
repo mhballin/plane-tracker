@@ -2,6 +2,32 @@ Import("env")
 import os
 import pathlib
 
+
+def load_env_file(path=".env"):
+    """Parse .env file directly — PlatformIO doesn't reliably inject it into os.environ
+    before pre-build scripts run, so we do it ourselves."""
+    env_path = pathlib.Path(path)
+    if not env_path.exists():
+        print(f"[credentials] WARNING: {path} not found — using placeholder values")
+        return
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, _, value = line.partition('=')
+            key = key.strip()
+            value = value.strip()
+            # Strip surrounding quotes (single or double)
+            if len(value) >= 2 and value[0] in ('"', "'") and value[-1] == value[0]:
+                value = value[1:-1]
+            if key:
+                os.environ[key] = value
+
+
+load_env_file()
+
+
 def exclude_helium_files(node):
     """Filter out ARM Helium assembly files from LVGL"""
     return None if "helium" in node.get_path() else node
@@ -32,6 +58,7 @@ def generate_credentials(env):
     opensky_secret  = os.environ.get("OPENSKY_CLIENT_SECRET","your-opensky-client-secret")
     home_lat        = os.environ.get("HOME_LAT",             "43.6591")
     home_lon        = os.environ.get("HOME_LON",             "-70.2568")
+    aviation_edge_key = os.environ.get("AVIATION_EDGE_API_KEY", "your-aviation-edge-api-key")
 
     # Escape backslashes and double-quotes inside the string values so the
     # generated #define is valid C regardless of credential content.
@@ -51,6 +78,7 @@ def generate_credentials(env):
         f'#define OPENSKY_CLIENT_SECRET_MACRO "{esc(opensky_secret)}"\n'
         f"#define HOME_LAT_MACRO             {home_lat}f\n"
         f"#define HOME_LON_MACRO             {home_lon}f\n"
+        f'#define AVIATION_EDGE_API_KEY_MACRO "{esc(aviation_edge_key)}"\n'
     )
 
     creds_path.write_text(content)
