@@ -1,0 +1,251 @@
+<h2>Aircraft Detail Screen</h2>
+<p class="subtitle">When you tap a contact — what does the drill-down look like? (800×480px)</p>
+
+<style>
+  .dp { background:#0a0f1a; border-radius:8px; font-family:'Courier New',monospace; overflow:hidden; }
+  .dp * { box-sizing:border-box; }
+
+  /* shared topbar */
+  .dp-topbar { background:#0d1525; border-bottom:1px solid #1a2a4a; padding:6px 12px; display:flex; align-items:center; gap:12px; }
+  .dp-back { color:#00d4ff; font-size:10px; border:1px solid #00d4ff44; border-radius:3px; padding:2px 8px; }
+  .dp-callsign-top { color:#00d4ff; font-size:20px; font-weight:bold; letter-spacing:2px; }
+  .dp-subtitle { color:#4a7099; font-size:9px; }
+
+  /* Option A — Data Sheet */
+  .a-body { display:flex; height:160px; }
+  .a-left { width:38%; padding:10px 12px; border-right:1px solid #1a3a5c; }
+  .a-right { flex:1; padding:10px 12px; display:grid; grid-template-columns:1fr 1fr; gap:6px; align-content:start; }
+  .a-field-label { color:#2a5a7a; font-size:8px; letter-spacing:2px; text-transform:uppercase; margin-bottom:1px; }
+  .a-field-value { color:#e8f4f8; font-size:14px; font-weight:bold; }
+  .a-field-unit { color:#4a7099; font-size:8px; }
+  .a-identity-block { margin-bottom:8px; }
+  .a-airline { color:#e8f4f8; font-size:11px; }
+  .a-type { color:#4a7099; font-size:9px; }
+  .a-instrument { background:#060c18; border:1px solid #1a3050; border-radius:4px; padding:5px 8px; }
+  .a-statusbar { background:#060c18; border-top:1px solid #1a2a4a; padding:3px 12px; }
+  .a-statusbar-text { color:#1a4a6a; font-size:8px; letter-spacing:2px; }
+
+  /* Option B — Cockpit Gauges */
+  .b-body { display:flex; height:160px; gap:8px; padding:8px; }
+  .b-identity { width:35%; display:flex; flex-direction:column; gap:4px; }
+  .b-id-card { background:#0d1525; border:1px solid #1a3a5c; border-radius:4px; padding:8px; }
+  .b-gauges { flex:1; display:flex; gap:6px; align-items:center; justify-content:center; }
+  .b-gauge { display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .b-gauge-ring {
+    width:65px; height:65px;
+    border-radius:50%;
+    border:2px solid #1a3a5c;
+    background:radial-gradient(circle, #0d1525 60%, #060c18 100%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    position:relative;
+  }
+  .b-gauge-value { color:#00d4ff; font-size:12px; font-weight:bold; line-height:1; }
+  .b-gauge-unit { color:#2a5a7a; font-size:7px; }
+  .b-gauge-label { color:#4a7099; font-size:8px; letter-spacing:1px; }
+  .b-tick { position:absolute; width:1px; height:6px; background:#1a3a5c; top:2px; left:50%; transform-origin:bottom; }
+  .b-needle { position:absolute; width:1px; height:26px; background:#00d4ff; bottom:50%; left:50%; transform-origin:bottom; box-shadow:0 0 3px #00d4ff; }
+  .b-dist-banner { background:#0d1525; border:1px solid #00d4ff33; border-radius:4px; padding:6px 10px; text-align:center; }
+
+  /* Option C — Contact Sheet */
+  .c-body { padding:8px; height:160px; }
+  .c-header-row { display:flex; gap:8px; margin-bottom:6px; }
+  .c-id-block { background:#0d1525; border:1px solid #1a3a5c; border-radius:4px; padding:6px 10px; flex:1; }
+  .c-dist-block { background:#0d1525; border:1px solid #00d4ff33; border-radius:4px; padding:6px 10px; min-width:140px; text-align:center; }
+  .c-instruments-row { display:flex; gap:6px; }
+  .c-inst { background:#060c18; border:1px solid #1a3050; border-radius:4px; padding:6px 10px; flex:1; }
+  .c-inst-label { color:#2a5a7a; font-size:7px; letter-spacing:2px; }
+  .c-inst-value { color:#e8f4f8; font-size:16px; font-weight:bold; margin:2px 0; }
+  .c-inst-unit { color:#4a7099; font-size:8px; }
+  .c-geo-row { display:flex; gap:6px; margin-top:6px; }
+  .c-geo { background:#060c18; border:1px solid #1a2a3a; border-radius:3px; padding:3px 8px; flex:1; }
+  .c-geo-val { color:#2a5a7a; font-size:9px; }
+</style>
+
+<div class="cards">
+
+  <!-- Option A: Data Sheet -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;">
+      <div class="dp" style="height:215px;">
+        <div class="dp-topbar">
+          <div class="dp-back">‹ BACK</div>
+          <div>
+            <div class="dp-callsign-top">UAL1234</div>
+            <div class="dp-subtitle">United Airlines · Boeing 737-800</div>
+          </div>
+        </div>
+        <div class="a-body">
+          <div class="a-left">
+            <div class="a-identity-block">
+              <div class="a-field-label">Distance</div>
+              <div class="a-field-value">42.3 <span class="a-field-unit">nm</span></div>
+            </div>
+            <div class="a-identity-block">
+              <div class="a-field-label">Bearing</div>
+              <div class="a-field-value">047° <span class="a-field-unit">NE</span></div>
+            </div>
+            <div>
+              <div class="a-field-label">Position</div>
+              <div style="color:#2a5a7a;font-size:9px;">43.6591°N  70.2568°W</div>
+            </div>
+          </div>
+          <div class="a-right">
+            <div class="a-instrument">
+              <div class="a-field-label">Altitude</div>
+              <div class="a-field-value">28,500 <span class="a-field-unit">ft</span></div>
+            </div>
+            <div class="a-instrument">
+              <div class="a-field-label">Speed</div>
+              <div class="a-field-value">420 <span class="a-field-unit">kts</span></div>
+            </div>
+            <div class="a-instrument">
+              <div class="a-field-label">Heading</div>
+              <div class="a-field-value">047° <span class="a-field-unit">NE</span></div>
+            </div>
+            <div class="a-instrument">
+              <div class="a-field-label">V/S</div>
+              <div class="a-field-value" style="color:#22c55e;">+800 <span class="a-field-unit">fpm</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="a-statusbar">
+          <div class="a-statusbar-text">DATA · LAST PING 10:42:18 · SQUAWK 2341</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Instrument Data Sheet</h3>
+      <p>Identity in topbar, left column has distance/bearing/coords, right grid has flight instruments. Clean, data-dense, easy to read at a glance.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Cockpit Gauges -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;">
+      <div class="dp" style="height:215px;">
+        <div class="dp-topbar">
+          <div class="dp-back">‹ BACK</div>
+          <div>
+            <div class="dp-callsign-top">UAL1234</div>
+            <div class="dp-subtitle">United Airlines · Boeing 737-800</div>
+          </div>
+          <div style="margin-left:auto;text-align:right;">
+            <div style="color:#00d4ff;font-size:11px;font-weight:bold;">42.3 nm · 047° NE</div>
+            <div style="color:#2a5a7a;font-size:8px;">from Portland ME</div>
+          </div>
+        </div>
+        <div class="b-body">
+          <div class="b-identity">
+            <div class="b-id-card">
+              <div class="a-field-label">Squawk</div>
+              <div style="color:#f59e0b;font-size:13px;font-weight:bold;">2341</div>
+            </div>
+            <div class="b-id-card" style="flex:1;">
+              <div class="a-field-label">V/S</div>
+              <div style="color:#22c55e;font-size:13px;font-weight:bold;">+800 fpm</div>
+              <div style="margin-top:6px;">
+                <div class="a-field-label">Position</div>
+                <div style="color:#2a5a7a;font-size:8px;">43.66°N 70.26°W</div>
+              </div>
+            </div>
+          </div>
+          <div class="b-gauges">
+            <div class="b-gauge">
+              <div class="b-gauge-ring">
+                <div class="b-needle" style="transform:rotate(-30deg);"></div>
+                <div class="b-gauge-value">28.5</div>
+                <div class="b-gauge-unit">×1000 ft</div>
+              </div>
+              <div class="b-gauge-label">ALTITUDE</div>
+            </div>
+            <div class="b-gauge">
+              <div class="b-gauge-ring">
+                <div class="b-needle" style="transform:rotate(40deg);"></div>
+                <div class="b-gauge-value">420</div>
+                <div class="b-gauge-unit">kts</div>
+              </div>
+              <div class="b-gauge-label">SPEED</div>
+            </div>
+            <div class="b-gauge">
+              <div class="b-gauge-ring" style="border-color:#00d4ff44;">
+                <div class="b-needle" style="transform:rotate(47deg);background:#f59e0b;box-shadow:0 0 3px #f59e0b;"></div>
+                <div class="b-gauge-value" style="font-size:10px;">047°</div>
+                <div class="b-gauge-unit">NE</div>
+              </div>
+              <div class="b-gauge-label">HEADING</div>
+            </div>
+          </div>
+        </div>
+        <div class="a-statusbar">
+          <div class="a-statusbar-text">DATA · LAST PING 10:42:18</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Cockpit Instruments</h3>
+      <p>Circular gauge dials for altitude, speed, heading. Distance/bearing prominent in the header. Most cockpit-authentic feel. More complex to build accurately.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Contact Sheet (recommended) -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;">
+      <div class="dp" style="height:215px;">
+        <div class="dp-topbar">
+          <div class="dp-back">‹ BACK</div>
+          <div>
+            <div class="dp-callsign-top">UAL1234</div>
+            <div class="dp-subtitle">United Airlines · Boeing 737-800</div>
+          </div>
+        </div>
+        <div class="c-body">
+          <div class="c-header-row">
+            <div class="c-id-block" style="flex:none;min-width:200px;">
+              <div class="a-field-label">Aircraft</div>
+              <div style="color:#e8f4f8;font-size:11px;">Boeing 737-800</div>
+              <div style="color:#4a7099;font-size:9px;margin-top:2px;">ICAO: B738 · Squawk: 2341</div>
+            </div>
+            <div class="c-dist-block">
+              <div class="a-field-label">Distance from Portland</div>
+              <div style="color:#00d4ff;font-size:18px;font-weight:bold;">42.3 nm</div>
+              <div style="color:#4a7099;font-size:9px;">Bearing 047° NE</div>
+            </div>
+          </div>
+          <div class="c-instruments-row">
+            <div class="c-inst">
+              <div class="c-inst-label">Altitude</div>
+              <div class="c-inst-value">28,500</div>
+              <div class="c-inst-unit">feet</div>
+            </div>
+            <div class="c-inst">
+              <div class="c-inst-label">Speed</div>
+              <div class="c-inst-value">420</div>
+              <div class="c-inst-unit">knots</div>
+            </div>
+            <div class="c-inst">
+              <div class="c-inst-label">Heading</div>
+              <div class="c-inst-value">047°</div>
+              <div class="c-inst-unit">NE</div>
+            </div>
+            <div class="c-inst">
+              <div class="c-inst-label">V/S</div>
+              <div class="c-inst-value" style="color:#22c55e;">+800</div>
+              <div class="c-inst-unit">fpm</div>
+            </div>
+          </div>
+          <div class="c-geo-row">
+            <div class="c-geo"><div class="c-geo-val">43.6591°N  70.2568°W</div></div>
+          </div>
+        </div>
+        <div class="a-statusbar">
+          <div class="a-statusbar-text">DATA · LAST PING 10:42:18 · SQUAWK 2341</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Contact Sheet ★ Recommended</h3>
+      <p>Distance/bearing gets its own prominent block at top-right. Four instrument tiles below for alt/speed/heading/VS. Data-dense but very readable. Simplest to implement correctly.</p>
+    </div>
+  </div>
+
+</div>

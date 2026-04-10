@@ -1,0 +1,304 @@
+<h2>Home Screen Layout</h2>
+<p class="subtitle">Choose the overall structure for the dark aviation dashboard (800×480px display)</p>
+
+<style>
+  .dash-preview {
+    background: #0a0f1a;
+    border-radius: 8px;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    position: relative;
+  }
+  .dash-preview * { box-sizing: border-box; }
+
+  /* Option A — Two Panel */
+  .a-topbar {
+    background: #0d1525;
+    border-bottom: 1px solid #1a2a4a;
+    padding: 6px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .a-time { color: #00d4ff; font-size: 18px; font-weight: bold; letter-spacing: 1px; }
+  .a-date { color: #4a7099; font-size: 10px; }
+  .a-status { color: #4a7099; font-size: 9px; }
+  .a-panels { display: flex; gap: 8px; padding: 8px; height: 170px; }
+  .a-weather-panel {
+    flex: 1.7;
+    background: #0d1525;
+    border: 1px solid #1a3a5c;
+    border-radius: 6px;
+    padding: 10px;
+  }
+  .a-aircraft-panel {
+    flex: 1;
+    background: #0d1525;
+    border: 1px solid #1a3a5c;
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .a-temp { color: #e8f4f8; font-size: 28px; font-weight: bold; }
+  .a-desc { color: #4a7099; font-size: 10px; margin: 2px 0; }
+  .a-meta { color: #2a5a7a; font-size: 9px; }
+  .a-forecast { display: flex; gap: 4px; margin-top: 8px; }
+  .a-forecast-day { background: #0a1a2e; border: 1px solid #1a3050; border-radius: 3px; padding: 3px 5px; text-align: center; }
+  .a-day-name { color: #4a7099; font-size: 8px; }
+  .a-day-temp { color: #00d4ff; font-size: 9px; }
+  .a-plane-icon { color: #00d4ff; font-size: 28px; }
+  .a-count { color: #00d4ff; font-size: 22px; font-weight: bold; }
+  .a-nearby { color: #4a7099; font-size: 9px; }
+  .a-btn { background: #00d4ff; color: #0a0f1a; border-radius: 4px; padding: 4px 12px; font-size: 9px; font-weight: bold; margin-top: 4px; }
+  .a-statusbar { background: #060c18; border-top: 1px solid #1a2a4a; padding: 3px 12px; }
+  .a-statusbar-text { color: #1a4a6a; font-size: 8px; letter-spacing: 2px; }
+
+  /* Option B — Full Width Bands */
+  .b-topbar {
+    background: #0d1525;
+    border-bottom: 1px solid #1a2a4a;
+    padding: 5px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .b-weather-band {
+    border-bottom: 1px solid #1a3a5c;
+    padding: 8px 12px;
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+  }
+  .b-weather-main { display: flex; flex-direction: column; }
+  .b-temp-big { color: #e8f4f8; font-size: 30px; font-weight: bold; line-height: 1; }
+  .b-cond { color: #4a7099; font-size: 10px; margin-top: 2px; }
+  .b-weather-details { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+  .b-detail { color: #2a5a7a; font-size: 8px; }
+  .b-forecast-strip { display: flex; gap: 6px; margin-top: 4px; }
+  .b-forecast-cell { background: #0d1525; border: 1px solid #1a3050; border-radius: 3px; padding: 3px 8px; text-align: center; }
+  .b-aircraft-band { padding: 8px 12px; }
+  .b-aircraft-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .b-radar-label { color: #00d4ff; font-size: 9px; letter-spacing: 3px; }
+  .b-count-badge { background: #00d4ff; color: #0a0f1a; font-size: 9px; font-weight: bold; border-radius: 10px; padding: 1px 8px; }
+  .b-contacts { display: flex; gap: 6px; }
+  .b-contact { background: #0d1525; border: 1px solid #1a3a5c; border-radius: 4px; padding: 5px 8px; flex: 1; }
+  .b-callsign { color: #00d4ff; font-size: 10px; font-weight: bold; }
+  .b-flight-info { color: #2a5a7a; font-size: 8px; margin-top: 1px; }
+  .b-statusbar { background: #060c18; border-top: 1px solid #1a2a4a; padding: 3px 12px; margin-top: auto; }
+
+  /* Option C — Radar Right */
+  .c-left {
+    width: 55%;
+    padding: 8px;
+    border-right: 1px solid #1a3a5c;
+  }
+  .c-right {
+    width: 45%;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .c-body { display: flex; height: 175px; }
+  .c-radar-circle {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    border: 1px solid #00d4ff33;
+    background: radial-gradient(circle, #0a1a2e 0%, #060c18 100%);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 8px;
+  }
+  .c-radar-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid #00d4ff22;
+  }
+  .c-radar-sweep {
+    position: absolute;
+    width: 50%;
+    height: 1px;
+    background: linear-gradient(to right, transparent, #00d4ff88);
+    top: 50%;
+    left: 50%;
+    transform-origin: left center;
+    transform: rotate(-30deg);
+  }
+  .c-blip {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    background: #00d4ff;
+    border-radius: 50%;
+    box-shadow: 0 0 4px #00d4ff;
+  }
+  .c-radar-label { color: #00d4ff; font-size: 9px; letter-spacing: 2px; margin-top: 6px; }
+  .c-count-large { color: #00d4ff; font-size: 20px; font-weight: bold; }
+  .c-nearby { color: #4a7099; font-size: 8px; }
+</style>
+
+<div class="cards">
+
+  <!-- Option A: Two-panel (evolved current layout) -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 0;">
+      <div class="dash-preview" style="height: 230px;">
+        <div class="a-topbar">
+          <div>
+            <div class="a-time">10:42 AM</div>
+            <div class="a-date">Thu, Apr 9</div>
+          </div>
+          <div class="a-status">PWM · PORTLAND ME · ALT 108FT</div>
+        </div>
+        <div class="a-panels">
+          <div class="a-weather-panel">
+            <div class="a-temp">41°F</div>
+            <div class="a-desc">Partly Cloudy — Feels 36°F</div>
+            <div class="a-meta">H: 48° L: 32° · Wind 12 mph NW · Hum 71%</div>
+            <div style="color:#2a5a7a;font-size:9px;margin-top:4px;">↑ 6:04 AM · ↓ 7:21 PM</div>
+            <div class="a-forecast">
+              <div class="a-forecast-day"><div class="a-day-name">FRI</div><div class="a-day-temp">46°</div></div>
+              <div class="a-forecast-day"><div class="a-day-name">SAT</div><div class="a-day-temp">52°</div></div>
+              <div class="a-forecast-day"><div class="a-day-name">SUN</div><div class="a-day-temp">39°</div></div>
+              <div class="a-forecast-day"><div class="a-day-name">MON</div><div class="a-day-temp">44°</div></div>
+              <div class="a-forecast-day"><div class="a-day-name">TUE</div><div class="a-day-temp">51°</div></div>
+            </div>
+          </div>
+          <div class="a-aircraft-panel">
+            <div class="a-plane-icon">✈</div>
+            <div class="a-count">3</div>
+            <div class="a-nearby">Aircraft Nearby</div>
+            <div class="a-btn">VIEW AIRCRAFT</div>
+          </div>
+        </div>
+        <div class="a-statusbar">
+          <div class="a-statusbar-text">SYS · LAST UPDATE 10:38 · OPENSKY OK · WiFi -62dBm</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Evolved Two-Panel</h3>
+      <p>Keep the current layout structure, dark-themed. Weather left, aircraft right. Lowest risk — same widget structure, new skin.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Horizontal Bands -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 0;">
+      <div class="dash-preview" style="height: 230px; display: flex; flex-direction: column;">
+        <div class="b-topbar">
+          <div>
+            <div class="a-time">10:42 AM</div>
+            <div class="a-date">Thu, Apr 9 · Portland ME</div>
+          </div>
+          <div class="a-status">3 CONTACTS · OPENSKY OK</div>
+        </div>
+        <div class="b-weather-band">
+          <div>
+            <div class="b-temp-big">41°F</div>
+            <div class="b-cond">Partly Cloudy</div>
+          </div>
+          <div class="b-weather-details">
+            <div class="b-detail">Feels 36°F · H 48° / L 32°</div>
+            <div class="b-detail">Wind 12 mph NW · Humidity 71%</div>
+            <div class="b-detail">↑ 6:04 AM  ↓ 7:21 PM</div>
+          </div>
+          <div style="margin-left:auto;">
+            <div class="b-forecast-strip">
+              <div class="b-forecast-cell"><div class="a-day-name">FRI</div><div class="a-day-temp">46°</div></div>
+              <div class="b-forecast-cell"><div class="a-day-name">SAT</div><div class="a-day-temp">52°</div></div>
+              <div class="b-forecast-cell"><div class="a-day-name">SUN</div><div class="a-day-temp">39°</div></div>
+              <div class="b-forecast-cell"><div class="a-day-name">MON</div><div class="a-day-temp">44°</div></div>
+              <div class="b-forecast-cell"><div class="a-day-name">TUE</div><div class="a-day-temp">51°</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="b-aircraft-band" style="flex:1;">
+          <div class="b-aircraft-header">
+            <div class="b-radar-label">◈  AREA CONTACTS</div>
+            <div class="b-count-badge">3 AIRCRAFT</div>
+          </div>
+          <div class="b-contacts">
+            <div class="b-contact">
+              <div class="b-callsign">UAL1234</div>
+              <div class="b-flight-info">B738 · 28,500ft · 420kts · 047°</div>
+            </div>
+            <div class="b-contact">
+              <div class="b-callsign">DAL892</div>
+              <div class="b-flight-info">A321 · 35,000ft · 480kts · 195°</div>
+            </div>
+            <div class="b-contact" style="border-color:#00d4ff44;">
+              <div class="b-callsign" style="color:#f59e0b;">N4823T</div>
+              <div class="b-flight-info">C172 · 4,500ft · 112kts · 310°</div>
+            </div>
+          </div>
+        </div>
+        <div class="b-statusbar">
+          <div class="a-statusbar-text">SYS · LAST UPDATE 10:38 · WiFi -62dBm</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Full-Width Bands</h3>
+      <p>Weather strip on top, aircraft contacts list below. Shows individual callsigns right on the home screen. Uses the full 800px width.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Radar Right -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 0;">
+      <div class="dash-preview" style="height: 230px; display: flex; flex-direction: column;">
+        <div class="a-topbar">
+          <div>
+            <div class="a-time">10:42 AM</div>
+            <div class="a-date">Thu, Apr 9</div>
+          </div>
+          <div class="a-status">PWM · PORTLAND ME</div>
+        </div>
+        <div class="c-body">
+          <div class="c-left">
+            <div class="a-temp">41°F</div>
+            <div class="a-desc">Partly Cloudy — Feels 36°F</div>
+            <div class="a-meta" style="color:#2a5a7a;font-size:9px;">H: 48° L: 32° · Wind 12 mph NW · Hum 71%</div>
+            <div style="color:#2a5a7a;font-size:9px;margin-top:2px;">↑ 6:04 AM · ↓ 7:21 PM</div>
+            <div class="a-forecast" style="margin-top:8px;">
+              <div class="a-forecast-day"><div class="a-day-name">FRI</div><div class="a-day-temp">46°</div></div>
+              <div class="a-forecast-day"><div class="a-day-name">SAT</div><div class="a-day-temp">52°</div></div>
+              <div class="a-forecast-day"><div class="a-day-name">SUN</div><div class="a-day-temp">39°</div></div>
+              <div class="a-forecast-day"><div class="a-day-name">MON</div><div class="a-day-temp">44°</div></div>
+              <div class="a-forecast-day"><div class="a-day-name">TUE</div><div class="a-day-temp">51°</div></div>
+            </div>
+          </div>
+          <div class="c-right">
+            <div class="c-radar-circle">
+              <div class="c-radar-ring" style="width:70%;height:70%;top:15%;left:15%;"></div>
+              <div class="c-radar-ring" style="width:40%;height:40%;top:30%;left:30%;"></div>
+              <div class="c-radar-sweep"></div>
+              <div class="c-blip" style="top:30%;left:60%;"></div>
+              <div class="c-blip" style="top:55%;left:35%;"></div>
+              <div class="c-blip" style="top:20%;left:45%;background:#f59e0b;box-shadow:0 0 4px #f59e0b;"></div>
+            </div>
+            <div class="c-radar-label">AREA RADAR</div>
+            <div class="c-count-large">3</div>
+            <div class="c-nearby">contacts in range</div>
+            <div class="a-btn" style="margin-top:6px;">INTERCEPT ›</div>
+          </div>
+        </div>
+        <div class="a-statusbar">
+          <div class="a-statusbar-text">SYS · LAST UPDATE 10:38 · OPENSKY OK · WiFi -62dBm</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Radar Panel Right</h3>
+      <p>Weather on the left, animated radar sweep on the right with blips for each aircraft. Most immersive aviation feel. Slightly more complex to implement.</p>
+    </div>
+  </div>
+
+</div>

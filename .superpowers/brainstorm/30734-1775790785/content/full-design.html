@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plane Tracker — Full Design</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #111827;
+    color: #e5e7eb;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    padding: 24px;
+  }
+  h1 { font-size: 22px; color: #f9fafb; margin-bottom: 4px; }
+  .page-sub { color: #6b7280; font-size: 13px; margin-bottom: 32px; }
+  .section { margin-bottom: 40px; }
+  .section-title { font-size: 15px; color: #9ca3af; text-transform: uppercase; letter-spacing: 3px; margin-bottom: 12px; border-bottom: 1px solid #1f2937; padding-bottom: 8px; }
+
+  /* Screen wrapper — scales 800x480 to fit browser */
+  .screen-wrap {
+    display: inline-block;
+    border: 1px solid #374151;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 0 40px rgba(0,212,255,0.08), 0 8px 32px rgba(0,0,0,0.6);
+  }
+  .screen {
+    width: 800px;
+    height: 480px;
+    background: #0e1726;
+    position: relative;
+    overflow: hidden;
+    font-family: 'Courier New', Courier, monospace;
+  }
+  .screen * { box-sizing: border-box; }
+
+  /* ─── COLORS (we'll use these throughout) ─── */
+  /* bg:          #0e1726  (dark navy — slightly lighter than pure #0a0f1a for cheap screens) */
+  /* panel:       #162033  (card/panel bg)                                                   */
+  /* panel-inner: #0a1428  (inset areas within panels)                                      */
+  /* accent:      #00d4ff  (cyan)                                                            */
+  /* amber:       #f59e0b                                                                     */
+  /* green:       #22c55e                                                                     */
+  /* text-hi:     #eaf6ff  (near-white with blue tint — reads better on TFT than pure white) */
+  /* text-mid:    #5a8aaa  (secondary text)                                                  */
+  /* text-dim:    #2a5070  (tertiary / labels)                                               */
+  /* border:      #1e3a54  (panel borders)                                                   */
+  /* border-acc:  #004466  (accent-tinted border)                                            */
+
+  /* ─── TOP BAR ─── */
+  .topbar {
+    position: absolute; top: 0; left: 0; right: 0; height: 58px;
+    background: #101f33;
+    border-bottom: 1px solid #1e3a54;
+    display: flex; align-items: center;
+    padding: 0 18px;
+    gap: 0;
+    z-index: 10;
+  }
+  .tb-time { color: #00d4ff; font-size: 28px; font-weight: bold; letter-spacing: 1px; line-height: 1; }
+  .tb-date { color: #5a8aaa; font-size: 11px; margin-top: 2px; letter-spacing: 0.5px; }
+  .tb-right { margin-left: auto; text-align: right; }
+  .tb-location { color: #5a8aaa; font-size: 10px; letter-spacing: 1px; }
+  .tb-status-ok { color: #2a5070; font-size: 9px; letter-spacing: 2px; }
+
+  /* ─── HOME / AIRCRAFT PRESENT ─── */
+  .home-body { position: absolute; top: 58px; left: 0; right: 0; bottom: 26px; display: flex; }
+
+  .weather-panel {
+    flex: 1;
+    border-right: 1px solid #1e3a54;
+    padding: 14px 16px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .wx-temp { color: #eaf6ff; font-size: 52px; font-weight: bold; line-height: 1; letter-spacing: -1px; }
+  .wx-cond { color: #5a8aaa; font-size: 14px; margin-top: 4px; }
+  .wx-feels { color: #2a5070; font-size: 12px; margin-top: 2px; }
+  .wx-divider { border: none; border-top: 1px solid #1e3a54; margin: 10px 0; }
+  .wx-row { display: flex; gap: 16px; margin-bottom: 4px; }
+  .wx-item { color: #5a8aaa; font-size: 11px; }
+  .wx-item span { color: #eaf6ff; }
+  .wx-sun { display: flex; gap: 16px; }
+  .wx-sun-item { color: #2a5070; font-size: 11px; }
+  .wx-sun-item span { color: #f59e0b; }
+
+  .wx-forecast { margin-top: auto; display: flex; gap: 6px; }
+  .wx-fc-day {
+    flex: 1; background: #0a1428; border: 1px solid #1e3a54; border-radius: 4px;
+    padding: 5px 4px; text-align: center;
+  }
+  .fc-name { color: #2a5070; font-size: 9px; letter-spacing: 1px; }
+  .fc-cond { font-size: 10px; color: #5a8aaa; margin: 1px 0; }
+  .fc-temp { color: #00d4ff; font-size: 11px; font-weight: bold; }
+  .fc-lo { color: #2a5070; font-size: 9px; }
+
+  /* ─── RADAR PANEL ─── */
+  .radar-panel {
+    width: 320px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px 10px;
+    position: relative;
+  }
+  .radar-label { color: #2a5070; font-size: 9px; letter-spacing: 4px; margin-bottom: 6px; }
+  .radar-circle {
+    width: 200px; height: 200px;
+    border-radius: 50%;
+    border: 1px solid #00d4ff22;
+    background: radial-gradient(circle, #0d1e30 0%, #060e1a 80%);
+    position: relative;
+    flex-shrink: 0;
+  }
+  .radar-ring {
+    position: absolute; border-radius: 50%;
+    border: 1px solid #00d4ff14;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .radar-cross-h {
+    position: absolute; left: 10%; right: 10%; top: 50%;
+    border-top: 1px solid #00d4ff0a;
+  }
+  .radar-cross-v {
+    position: absolute; top: 10%; bottom: 10%; left: 50%;
+    border-left: 1px solid #00d4ff0a;
+  }
+  .radar-sweep {
+    position: absolute;
+    width: 50%; height: 50%;
+    top: 0; left: 50%;
+    transform-origin: bottom left;
+    background: conic-gradient(from 0deg, transparent 80%, #00d4ff18 100%);
+    transform: rotate(220deg);
+    border-radius: 0 100% 0 0;
+  }
+  .radar-home {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 6px; height: 6px;
+    background: #00d4ff;
+    border-radius: 50%;
+    box-shadow: 0 0 6px #00d4ff;
+  }
+  .blip {
+    position: absolute;
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .blip-cyan { background: #00d4ff; box-shadow: 0 0 5px #00d4ff, 0 0 10px #00d4ff66; }
+  .blip-amber { background: #f59e0b; box-shadow: 0 0 5px #f59e0b, 0 0 10px #f59e0b66; }
+  .blip-trail {
+    position: absolute;
+    width: 3px; height: 3px;
+    border-radius: 50%;
+    background: #00d4ff44;
+    transform: translate(-50%, -50%);
+  }
+
+  .radar-count {
+    display: flex; align-items: baseline; gap: 6px;
+    margin-top: 8px;
+  }
+  .radar-num { color: #00d4ff; font-size: 28px; font-weight: bold; }
+  .radar-unit { color: #2a5070; font-size: 10px; letter-spacing: 2px; }
+
+  .radar-btn {
+    background: #00d4ff; color: #060e1a;
+    border-radius: 4px; padding: 8px 28px;
+    font-size: 11px; font-weight: bold;
+    letter-spacing: 2px; cursor: pointer;
+    margin-top: 6px;
+  }
+
+  /* ─── HOME / NO AIRCRAFT ─── */
+  .home-body-full { position: absolute; top: 58px; left: 0; right: 0; bottom: 26px; display: flex; }
+  .weather-panel-full {
+    flex: 1;
+    padding: 14px 20px 10px;
+    display: flex;
+    gap: 0;
+  }
+  .wf-left { flex: 1; display: flex; flex-direction: column; }
+  .wf-right { width: 320px; display: flex; flex-direction: column; justify-content: space-between; }
+
+  .wf-big-temp { color: #eaf6ff; font-size: 72px; font-weight: bold; line-height: 1; letter-spacing: -2px; }
+  .wf-cond { color: #5a8aaa; font-size: 16px; margin-top: 6px; }
+  .wf-feels { color: #2a5070; font-size: 13px; margin-top: 3px; }
+  .wf-meta { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .wf-meta-row { color: #5a8aaa; font-size: 12px; }
+  .wf-meta-row span { color: #eaf6ff; }
+  .wf-sun-row { display: flex; gap: 20px; margin-top: 8px; }
+  .wf-sun-item { color: #2a5070; font-size: 12px; }
+  .wf-sun-item span { color: #f59e0b; }
+
+  .wf-fc-title { color: #2a5070; font-size: 9px; letter-spacing: 3px; margin-bottom: 8px; }
+  .wf-fc-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid #1e3a54;
+  }
+  .wf-fc-row:last-child { border-bottom: none; }
+  .wf-fc-day { color: #5a8aaa; font-size: 12px; width: 36px; }
+  .wf-fc-cond { color: #2a5070; font-size: 11px; flex: 1; }
+  .wf-fc-hi { color: #eaf6ff; font-size: 12px; font-weight: bold; margin-left: auto; }
+  .wf-fc-lo { color: #2a5070; font-size: 11px; margin-left: 6px; }
+
+  .no-ac-banner {
+    position: absolute;
+    bottom: 34px; left: 50%; transform: translateX(-50%);
+    color: #1e3a54; font-size: 9px; letter-spacing: 4px;
+    white-space: nowrap;
+  }
+
+  /* ─── AIRCRAFT DETAIL ─── */
+  .detail-topbar {
+    position: absolute; top: 0; left: 0; right: 0; height: 58px;
+    background: #101f33;
+    border-bottom: 1px solid #1e3a54;
+    display: flex; align-items: center;
+    padding: 0 18px; gap: 16px;
+    z-index: 10;
+  }
+  .det-back {
+    color: #00d4ff; border: 1px solid #00d4ff44; border-radius: 3px;
+    padding: 4px 12px; font-size: 10px; letter-spacing: 1px; white-space: nowrap;
+  }
+  .det-callsign { color: #00d4ff; font-size: 32px; font-weight: bold; letter-spacing: 3px; line-height: 1; }
+  .det-airline { color: #5a8aaa; font-size: 11px; margin-top: 3px; letter-spacing: 0.5px; }
+  .det-dist-block { margin-left: auto; text-align: right; }
+  .det-dist-val { color: #00d4ff; font-size: 20px; font-weight: bold; letter-spacing: 1px; }
+  .det-dist-label { color: #2a5070; font-size: 9px; letter-spacing: 2px; }
+
+  .detail-body { position: absolute; top: 58px; left: 0; right: 0; bottom: 26px; padding: 12px 18px; display: flex; flex-direction: column; gap: 10px; }
+
+  .det-id-row { display: flex; gap: 10px; }
+  .det-id-card { background: #162033; border: 1px solid #1e3a54; border-radius: 5px; padding: 8px 12px; }
+  .det-id-label { color: #2a5070; font-size: 8px; letter-spacing: 2px; }
+  .det-id-value { color: #eaf6ff; font-size: 13px; margin-top: 2px; }
+  .det-id-sub { color: #5a8aaa; font-size: 10px; margin-top: 1px; }
+
+  .det-dist-card { background: #101f33; border: 1px solid #004466; border-radius: 5px; padding: 8px 16px; margin-left: auto; text-align: center; min-width: 160px; }
+  .det-dist-big { color: #00d4ff; font-size: 24px; font-weight: bold; line-height: 1; }
+  .det-dist-sub { color: #2a5070; font-size: 9px; letter-spacing: 2px; margin-top: 2px; }
+  .det-bearing { color: #5a8aaa; font-size: 11px; margin-top: 2px; }
+
+  .det-instruments { display: flex; gap: 10px; }
+  .det-inst {
+    flex: 1; background: #0a1428; border: 1px solid #1e3a54; border-radius: 5px;
+    padding: 10px 12px;
+  }
+  .inst-label { color: #2a5070; font-size: 8px; letter-spacing: 3px; }
+  .inst-value { color: #eaf6ff; font-size: 26px; font-weight: bold; line-height: 1.1; }
+  .inst-unit { color: #5a8aaa; font-size: 10px; }
+  .inst-value-green { color: #22c55e; }
+  .inst-value-amber { color: #f59e0b; }
+
+  .det-geo-row { display: flex; gap: 10px; }
+  .det-geo { flex: 1; background: #060e1a; border: 1px solid #1e3a54; border-radius: 4px; padding: 5px 10px; }
+  .det-geo-val { color: #2a5070; font-size: 10px; letter-spacing: 1px; }
+
+  /* ─── STATUS BAR ─── */
+  .statusbar {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 26px;
+    background: #060e1a;
+    border-top: 1px solid #1e3a54;
+    display: flex; align-items: center;
+    padding: 0 14px;
+    gap: 0;
+  }
+  .sb-text { color: #1e3a54; font-size: 9px; letter-spacing: 2px; flex: 1; }
+  .sb-ok { color: #22c55e; font-size: 9px; letter-spacing: 1px; }
+  .sb-dot { color: #1e3a54; margin: 0 6px; }
+
+  /* ─── PALETTE SECTION ─── */
+  .palette { display: flex; gap: 12px; flex-wrap: wrap; }
+  .swatch { display: flex; align-items: center; gap: 10px; background: #1f2937; border-radius: 6px; padding: 8px 12px; min-width: 200px; }
+  .swatch-color { width: 32px; height: 32px; border-radius: 4px; flex-shrink: 0; }
+  .swatch-name { font-size: 12px; color: #f3f4f6; }
+  .swatch-hex { font-size: 11px; color: #6b7280; font-family: monospace; }
+  .swatch-note { font-size: 10px; color: #4b5563; margin-top: 1px; }
+
+  /* tab switcher */
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab {
+    padding: 6px 16px; border-radius: 4px; font-size: 12px; cursor: pointer;
+    border: 1px solid #374151; color: #9ca3af; background: transparent;
+  }
+  .tab.active { background: #00d4ff22; border-color: #00d4ff; color: #00d4ff; }
+
+  .screen-tab { display: none; }
+  .screen-tab.active { display: block; }
+
+  .note { background: #1f2937; border-left: 3px solid #00d4ff; padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 12px; color: #9ca3af; margin-top: 12px; line-height: 1.6; }
+  .note strong { color: #e5e7eb; }
+</style>
+</head>
+<body>
+
+<h1>Plane Tracker — Aviation Dashboard Design</h1>
+<p class="page-sub">Full design mockup · 800×480 · Elecrow 5" TFT</p>
+
+<!-- SCREEN TABS -->
+<div class="section">
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('home-ac')">Home (Aircraft)</button>
+    <button class="tab" onclick="showTab('home-no')">Home (No Aircraft)</button>
+    <button class="tab" onclick="showTab('detail')">Aircraft Detail</button>
+    <button class="tab" onclick="showTab('palette')">Color Palette</button>
+  </div>
+
+  <!-- TAB: Home with aircraft -->
+  <div id="home-ac" class="screen-tab active">
+    <div class="screen-wrap">
+      <div class="screen">
+        <!-- Top bar -->
+        <div class="topbar">
+          <div>
+            <div class="tb-time">10:42 AM</div>
+            <div class="tb-date">THU  APR 9</div>
+          </div>
+          <div class="tb-right">
+            <div class="tb-location">PWM · PORTLAND ME</div>
+            <div class="tb-status-ok">OPENSKY OK · WiFi -62dBm</div>
+          </div>
+        </div>
+        <!-- Body -->
+        <div class="home-body">
+          <!-- Weather panel -->
+          <div class="weather-panel">
+            <div class="wx-temp">41°</div>
+            <div class="wx-cond">Partly Cloudy</div>
+            <div class="wx-feels">Feels like 36°F &nbsp;·&nbsp; H 48° / L 32°</div>
+            <hr class="wx-divider">
+            <div class="wx-row">
+              <div class="wx-item">Wind <span>12 mph NW</span></div>
+              <div class="wx-item">Humidity <span>71%</span></div>
+            </div>
+            <div class="wx-sun">
+              <div class="wx-sun-item">↑ <span>6:04 AM</span></div>
+              <div class="wx-sun-item">↓ <span>7:21 PM</span></div>
+            </div>
+            <div class="wx-forecast" style="margin-top:12px;">
+              <div class="wx-fc-day"><div class="fc-name">FRI</div><div class="fc-cond">Cloudy</div><div class="fc-temp">46°</div><div class="fc-lo">32°</div></div>
+              <div class="wx-fc-day"><div class="fc-name">SAT</div><div class="fc-cond">Rain</div><div class="fc-temp">52°</div><div class="fc-lo">38°</div></div>
+              <div class="wx-fc-day"><div class="fc-name">SUN</div><div class="fc-cond">Clear</div><div class="fc-temp">39°</div><div class="fc-lo">28°</div></div>
+              <div class="wx-fc-day"><div class="fc-name">MON</div><div class="fc-cond">Windy</div><div class="fc-temp">44°</div><div class="fc-lo">30°</div></div>
+              <div class="wx-fc-day"><div class="fc-name">TUE</div><div class="fc-cond">Clear</div><div class="fc-temp">51°</div><div class="fc-lo">35°</div></div>
+            </div>
+          </div>
+
+          <!-- Radar panel -->
+          <div class="radar-panel">
+            <div class="radar-label">◈ AREA CONTACTS</div>
+            <div class="radar-circle">
+              <div class="radar-ring" style="width:66%;height:66%;"></div>
+              <div class="radar-ring" style="width:33%;height:33%;"></div>
+              <div class="radar-cross-h"></div>
+              <div class="radar-cross-v"></div>
+              <div class="radar-sweep"></div>
+              <div class="radar-home"></div>
+              <!-- blip 1 -->
+              <div class="blip blip-cyan" style="top:28%;left:62%;"></div>
+              <div class="blip-trail" style="top:30%;left:60%;"></div>
+              <!-- blip 2 -->
+              <div class="blip blip-cyan" style="top:58%;left:38%;"></div>
+              <div class="blip-trail" style="top:60%;left:40%;"></div>
+              <!-- blip 3 (low altitude — amber) -->
+              <div class="blip blip-amber" style="top:42%;left:70%;"></div>
+            </div>
+            <div class="radar-count">
+              <div class="radar-num">3</div>
+              <div class="radar-unit">CONTACTS</div>
+            </div>
+            <div class="radar-btn">✈  VIEW AIRCRAFT</div>
+          </div>
+        </div>
+        <!-- Status bar -->
+        <div class="statusbar">
+          <div class="sb-text">SYS<div class="sb-dot" style="display:inline">·</div> LAST UPDATE 10:38<div class="sb-dot" style="display:inline">·</div> OPENSKY OK</div>
+          <div class="sb-ok">● LIVE</div>
+        </div>
+      </div>
+    </div>
+    <div class="note">
+      <strong>Radar panel is visible only when aircraft are present.</strong> Amber blip = low altitude (GA/small plane). Cyan = airliner. The sweep arc gives it the rotating radar feel. Tapping anywhere on the radar panel (or the button) navigates to the contact list.
+    </div>
+  </div>
+
+  <!-- TAB: Home no aircraft -->
+  <div id="home-no" class="screen-tab">
+    <div class="screen-wrap">
+      <div class="screen">
+        <div class="topbar">
+          <div>
+            <div class="tb-time">10:42 AM</div>
+            <div class="tb-date">THU  APR 9</div>
+          </div>
+          <div class="tb-right">
+            <div class="tb-location">PWM · PORTLAND ME</div>
+            <div class="tb-status-ok">OPENSKY OK · WiFi -62dBm</div>
+          </div>
+        </div>
+        <div class="home-body-full">
+          <div class="weather-panel-full">
+            <div class="wf-left">
+              <div class="wf-big-temp">41°</div>
+              <div class="wf-cond">Partly Cloudy</div>
+              <div class="wf-feels">Feels like 36°F</div>
+              <div class="wf-meta">
+                <div class="wf-meta-row">H <span>48°F</span> &nbsp;/&nbsp; L <span>32°F</span></div>
+                <div class="wf-meta-row">Wind <span>12 mph NW</span> &nbsp;·&nbsp; Humidity <span>71%</span></div>
+              </div>
+              <div class="wf-sun-row">
+                <div class="wf-sun-item">↑ Sunrise <span>6:04 AM</span></div>
+                <div class="wf-sun-item">↓ Sunset <span>7:21 PM</span></div>
+              </div>
+            </div>
+            <div class="wf-right">
+              <div class="wf-fc-title">5-DAY FORECAST</div>
+              <div class="wf-fc-row"><div class="wf-fc-day">FRI</div><div class="wf-fc-cond">Partly Cloudy</div><div class="wf-fc-hi">46°</div><div class="wf-fc-lo">32°</div></div>
+              <div class="wf-fc-row"><div class="wf-fc-day">SAT</div><div class="wf-fc-cond">Rain Showers</div><div class="wf-fc-hi">52°</div><div class="wf-fc-lo">38°</div></div>
+              <div class="wf-fc-row"><div class="wf-fc-day">SUN</div><div class="wf-fc-cond">Clear Sky</div><div class="wf-fc-hi">39°</div><div class="wf-fc-lo">28°</div></div>
+              <div class="wf-fc-row"><div class="wf-fc-day">MON</div><div class="wf-fc-cond">Windy</div><div class="wf-fc-hi">44°</div><div class="wf-fc-lo">30°</div></div>
+              <div class="wf-fc-row"><div class="wf-fc-day">TUE</div><div class="wf-fc-cond">Clear Sky</div><div class="wf-fc-hi">51°</div><div class="wf-fc-lo">35°</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="no-ac-banner">NO CONTACTS IN RANGE</div>
+        <div class="statusbar">
+          <div class="sb-text">SYS · LAST UPDATE 10:38 · NO AIRCRAFT DETECTED</div>
+          <div class="sb-ok" style="color:#2a5070;">● IDLE</div>
+        </div>
+      </div>
+    </div>
+    <div class="note">
+      <strong>No aircraft state:</strong> Weather expands to full width. Temperature gets larger (72px), forecast becomes a full right-column list instead of compact tiles. "NO CONTACTS IN RANGE" subtly watermarked at bottom center.
+    </div>
+  </div>
+
+  <!-- TAB: Aircraft Detail -->
+  <div id="detail" class="screen-tab">
+    <div class="screen-wrap">
+      <div class="screen">
+        <div class="detail-topbar">
+          <div class="det-back">‹ BACK</div>
+          <div>
+            <div class="det-callsign">UAL1234</div>
+            <div class="det-airline">United Airlines · Boeing 737-800</div>
+          </div>
+          <div class="det-dist-block">
+            <div class="det-dist-val">42.3 nm</div>
+            <div class="det-dist-label">FROM PORTLAND · 047° NE</div>
+          </div>
+        </div>
+        <div class="detail-body">
+          <!-- ID row -->
+          <div class="det-id-row">
+            <div class="det-id-card">
+              <div class="det-id-label">ICAO TYPE</div>
+              <div class="det-id-value">B738</div>
+              <div class="det-id-sub">Boeing 737-800</div>
+            </div>
+            <div class="det-id-card">
+              <div class="det-id-label">SQUAWK</div>
+              <div class="det-id-value" style="color:#f59e0b;">2341</div>
+              <div class="det-id-sub">Mode C</div>
+            </div>
+            <div class="det-id-card" style="margin-left:auto;">
+              <div class="det-id-label">LAST SEEN</div>
+              <div class="det-id-value">10:42:18</div>
+              <div class="det-id-sub">14s ago</div>
+            </div>
+          </div>
+
+          <!-- Instruments -->
+          <div class="det-instruments">
+            <div class="det-inst">
+              <div class="inst-label">ALTITUDE</div>
+              <div class="inst-value">28,500</div>
+              <div class="inst-unit">feet</div>
+            </div>
+            <div class="det-inst">
+              <div class="inst-label">SPEED</div>
+              <div class="inst-value">420</div>
+              <div class="inst-unit">knots</div>
+            </div>
+            <div class="det-inst">
+              <div class="inst-label">HEADING</div>
+              <div class="inst-value">047°</div>
+              <div class="inst-unit">NE</div>
+            </div>
+            <div class="det-inst">
+              <div class="inst-label">VERT SPEED</div>
+              <div class="inst-value inst-value-green">+800</div>
+              <div class="inst-unit">fpm · climbing</div>
+            </div>
+          </div>
+
+          <!-- Geo row -->
+          <div class="det-geo-row">
+            <div class="det-geo"><div class="det-geo-val">LAT  43.6591° N</div></div>
+            <div class="det-geo"><div class="det-geo-val">LON  70.2568° W</div></div>
+          </div>
+        </div>
+        <div class="statusbar">
+          <div class="sb-text">DATA · CONTACT UAL1234 · SQUAWK 2341 · LAST PING 10:42:18</div>
+          <div class="sb-ok">● LIVE</div>
+        </div>
+      </div>
+    </div>
+    <div class="note">
+      <strong>Distance and bearing replace "Route Unknown"</strong> — computed from OpenSky lat/lon vs. home coords. V/S color-coded: green = climbing, red = descending, white = level. Squawk shown in amber (attention-grabbing, like a transponder readout).
+    </div>
+  </div>
+
+  <!-- TAB: Palette -->
+  <div id="palette" class="screen-tab">
+    <div class="palette">
+      <div class="swatch"><div class="swatch-color" style="background:#0e1726;border:1px solid #374151;"></div><div><div class="swatch-name">Background</div><div class="swatch-hex">#0e1726</div><div class="swatch-note">Slightly lighter than pure black — reduces backlight bleed halos on cheap TFT</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#101f33;"></div><div><div class="swatch-name">Top Bar</div><div class="swatch-hex">#101f33</div><div class="swatch-note">Barely distinct from bg — creates subtle depth without gradients</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#162033;"></div><div><div class="swatch-name">Panel / Card</div><div class="swatch-hex">#162033</div><div class="swatch-note">Panels sit above background — avoids pure-black gamma crush on cheap screens</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#0a1428;"></div><div><div class="swatch-name">Inset / Instrument</div><div class="swatch-hex">#0a1428</div><div class="swatch-note">Instrument tiles sink below panel bg for depth</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#00d4ff;"></div><div><div class="swatch-name">Accent (Cyan)</div><div class="swatch-hex">#00d4ff</div><div class="swatch-note">Primary interactive + data color. Bold enough to punch through TFT color shift.</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#f59e0b;"></div><div><div class="swatch-name">Amber (Warning)</div><div class="swatch-hex">#f59e0b</div><div class="swatch-note">Low-altitude GA aircraft blips, squawk display, amber alerts</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#22c55e;"></div><div><div class="swatch-name">Green (Positive)</div><div class="swatch-hex">#22c55e</div><div class="swatch-note">Climbing V/S, system OK indicators</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#eaf6ff;border:1px solid #374151;"></div><div><div class="swatch-name">Text Primary</div><div class="swatch-hex">#eaf6ff</div><div class="swatch-note">Near-white with blue tint — reads better on cold-shifted TFT than pure #ffffff</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#5a8aaa;"></div><div><div class="swatch-name">Text Secondary</div><div class="swatch-hex">#5a8aaa</div><div class="swatch-note">Conditions, labels, secondary data</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#2a5070;"></div><div><div class="swatch-name">Text Dim</div><div class="swatch-hex">#2a5070</div><div class="swatch-note">Tertiary labels, unit strings, status bar text</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#1e3a54;"></div><div><div class="swatch-name">Border</div><div class="swatch-hex">#1e3a54</div><div class="swatch-note">Panel borders, dividers</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#060e1a;border:1px solid #374151;"></div><div><div class="swatch-name">Status Bar BG</div><div class="swatch-hex">#060e1a</div><div class="swatch-note">Darkest element — grounds the bottom of the screen</div></div></div>
+    </div>
+    <div class="note" style="margin-top:20px;">
+      <strong>Why these specific darks for a cheap screen:</strong> Cheap TFT panels crush dark colors together due to poor gamma. Using 4 distinct dark values (<code>#060e1a</code> → <code>#0a1428</code> → <code>#0e1726</code> → <code>#162033</code>) gives visible depth even when the panel compresses them. Pure black <code>#000000</code> and near-black look identical on many cheap panels, so we avoid it as a background.
+    </div>
+  </div>
+
+</div>
+
+<script>
+function showTab(id) {
+  document.querySelectorAll('.screen-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+
+</body>
+</html>
