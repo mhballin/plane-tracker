@@ -8,6 +8,7 @@ namespace GeoUtils {
 
 constexpr float EARTH_RADIUS_NM = 3440.065f;
 constexpr float DEG_TO_RAD = static_cast<float>(3.14159265358979323846) / 180.0f;
+constexpr float RAD_TO_DEG = 180.0f / static_cast<float>(3.14159265358979323846);
 
 /// Haversine great-circle distance in nautical miles.
 inline float distanceNm(float lat1, float lon1, float lat2, float lon2) {
@@ -25,7 +26,7 @@ inline float bearingDeg(float lat1, float lon1, float lat2, float lon2) {
     float y = sinf(dlon) * cosf(lat2 * DEG_TO_RAD);
     float x = cosf(lat1 * DEG_TO_RAD) * sinf(lat2 * DEG_TO_RAD)
             - sinf(lat1 * DEG_TO_RAD) * cosf(lat2 * DEG_TO_RAD) * cosf(dlon);
-    float b = atan2f(y, x) * (180.0f / static_cast<float>(3.14159265358979323846));
+    float b = atan2f(y, x) * RAD_TO_DEG;
     return fmodf(b + 360.0f, 360.0f);
 }
 
@@ -50,8 +51,8 @@ inline BlipPos blipPosition(float distNm, float bearingDegVal,
     float r = scale * static_cast<float>(circleRadius - blipMargin);
     float rad = bearingDegVal * DEG_TO_RAD;
     return {
-        static_cast<int16_t>(circleRadius + static_cast<int16_t>(r * sinf(rad))),
-        static_cast<int16_t>(circleRadius - static_cast<int16_t>(r * cosf(rad)))
+        static_cast<int16_t>(circleRadius + r * sinf(rad)),
+        static_cast<int16_t>(circleRadius - r * cosf(rad))
     };
 }
 
