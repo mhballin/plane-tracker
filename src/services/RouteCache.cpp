@@ -69,7 +69,11 @@ bool RouteCache::lookup(const String& callsign,
 void RouteCache::store(const String& callsign,
                         const String& origin, const String& destination,
                         const String& originName, const String& destinationName) {
-    // NVS key max length = 15 chars; callsign <= 8 chars -- safe
+    // NVS key max length = 15 chars; guard against unexpectedly long callsigns
+    if (callsign.length() > 15) {
+        Serial.printf("[RouteCache] Callsign too long for NVS key: %s\n", callsign.c_str());
+        return;
+    }
     String value = origin + "|" + originName + "|" + destination + "|" + destinationName;
     prefs_.begin(NVS_NS, false);  // read-write
     prefs_.putString(callsign.c_str(), value);
