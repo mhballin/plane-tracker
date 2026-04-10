@@ -114,7 +114,7 @@ private:
     void build_home_screen();
     void build_home_empty_screen();
     void build_aircraft_screen();
-    void build_no_aircraft_screen();  // backward-compat stub
+    void build_no_aircraft_screen();  // backward-compat: calls build_home_empty_screen()
 
     // --- Section builders ---
     void buildTopBar(lv_obj_t* screen, WeatherWidgets& w);
