@@ -141,13 +141,13 @@ All `#define` constants in `LVGLDisplayManager.cpp` replace existing `COLOR_*` d
 
 ---
 
-## 4. Route Lookup — Aviation Edge Integration
+## 4. Route Lookup — AirLabs Integration
 
 ### API
-- **Service:** aviation-edge.com
-- **Endpoint:** `GET https://aviation-edge.com/v2/public/timetable?key={KEY}&flight_iata={callsign}&type=departure`
-- **Credential:** `AVIATION_EDGE_API_KEY` in `.env` → `AVIATION_EDGE_API_KEY_MACRO` in `credentials.h`
-- **Free tier:** 500 requests/month
+- **Service:** airlabs.co (Aviation Edge free tier disabled as of April 2026; AirLabs has 1,000 free/month)
+- **Endpoint:** `GET https://airlabs.co/api/v9/flight?flight_iata={callsign}&api_key={KEY}`
+- **Credential:** `AIRLABS_API_KEY` in `.env` → `AIRLABS_API_KEY_MACRO` in `credentials.h`
+- **Free tier:** 1,000 requests/month
 
 ### Caching Strategy (NVS)
 - Namespace: `"route_cache"`

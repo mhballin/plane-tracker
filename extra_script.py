@@ -58,7 +58,7 @@ def generate_credentials(env):
     opensky_secret  = os.environ.get("OPENSKY_CLIENT_SECRET","your-opensky-client-secret")
     home_lat        = os.environ.get("HOME_LAT",             "43.6591")
     home_lon        = os.environ.get("HOME_LON",             "-70.2568")
-    aviation_edge_key = os.environ.get("AVIATION_EDGE_API_KEY", "your-aviation-edge-api-key")
+    airlabs_key     = os.environ.get("AIRLABS_API_KEY",       "your-airlabs-api-key")
 
     # Escape backslashes and double-quotes inside the string values so the
     # generated #define is valid C regardless of credential content.
@@ -78,7 +78,7 @@ def generate_credentials(env):
         f'#define OPENSKY_CLIENT_SECRET_MACRO "{esc(opensky_secret)}"\n'
         f"#define HOME_LAT_MACRO             {home_lat}f\n"
         f"#define HOME_LON_MACRO             {home_lon}f\n"
-        f'#define AVIATION_EDGE_API_KEY_MACRO "{esc(aviation_edge_key)}"\n'
+        f'#define AIRLABS_API_KEY_MACRO       "{esc(airlabs_key)}"\n'
     )
 
     creds_path.write_text(content)
