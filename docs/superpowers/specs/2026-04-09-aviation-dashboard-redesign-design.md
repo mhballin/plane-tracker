@@ -144,10 +144,13 @@ All `#define` constants in `LVGLDisplayManager.cpp` replace existing `COLOR_*` d
 ## 4. Route Lookup — AeroDataBox Integration
 
 ### API
-- **Service:** AeroDataBox via api.market (instant signup, no approval required)
-- **Endpoint:** `GET https://aerodatabox.p.rapidapi.com/flights/callsign/{callsign}` with `X-RapidAPI-Key` header, or equivalent api.market endpoint
+- **Service:** AeroDataBox via RapidAPI
+- **Endpoint:** `GET https://aerodatabox.p.rapidapi.com/flights/number/{flightNumber}/{date}`
+  - `flightNumber`: IATA flight number parsed from callsign (e.g. `UAL1234` → `UA1234`)
+  - `date`: today's date in `YYYY-MM-DD` format
+  - Headers: `x-rapidapi-key: {KEY}`, `x-rapidapi-host: aerodatabox.p.rapidapi.com`
 - **Credential:** `AERODATABOX_API_KEY` in `.env` → `AERODATABOX_API_KEY_MACRO` in `credentials.h`
-- **Free tier:** ~300–600 requests/month (api.market free plan)
+- **Free tier:** ~300–600 requests/month
 - **Optional:** if key is the placeholder value `"your-aerodatabox-api-key"`, skip the lookup and show `ROUTE UNAVAILABLE` — device works fully without a key
 
 ### Caching Strategy (NVS)
