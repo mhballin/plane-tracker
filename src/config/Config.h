@@ -36,10 +36,14 @@ namespace Config {
     constexpr float HOME_LAT = HOME_LAT_MACRO;
     constexpr float HOME_LON = HOME_LON_MACRO;
 
+    // ========================================
     // AeroDataBox Route Lookup
+    // ========================================
     constexpr char AERODATABOX_API_KEY[] = AERODATABOX_API_KEY_MACRO;
 
-    // Radar display settings
+    // ========================================
+    // Radar Display
+    // ========================================
     constexpr float RADAR_MAX_RANGE_NM = 150.0f;
 
     // ========================================
