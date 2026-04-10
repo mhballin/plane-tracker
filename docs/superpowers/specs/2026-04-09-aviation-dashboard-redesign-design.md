@@ -141,13 +141,14 @@ All `#define` constants in `LVGLDisplayManager.cpp` replace existing `COLOR_*` d
 
 ---
 
-## 4. Route Lookup — AirLabs Integration
+## 4. Route Lookup — AeroDataBox Integration
 
 ### API
-- **Service:** airlabs.co (Aviation Edge free tier disabled as of April 2026; AirLabs has 1,000 free/month)
-- **Endpoint:** `GET https://airlabs.co/api/v9/flight?flight_iata={callsign}&api_key={KEY}`
-- **Credential:** `AIRLABS_API_KEY` in `.env` → `AIRLABS_API_KEY_MACRO` in `credentials.h`
-- **Free tier:** 1,000 requests/month
+- **Service:** AeroDataBox via api.market (instant signup, no approval required)
+- **Endpoint:** `GET https://aerodatabox.p.rapidapi.com/flights/callsign/{callsign}` with `X-RapidAPI-Key` header, or equivalent api.market endpoint
+- **Credential:** `AERODATABOX_API_KEY` in `.env` → `AERODATABOX_API_KEY_MACRO` in `credentials.h`
+- **Free tier:** ~300–600 requests/month (api.market free plan)
+- **Optional:** if key is the placeholder value `"your-aerodatabox-api-key"`, skip the lookup and show `ROUTE UNAVAILABLE` — device works fully without a key
 
 ### Caching Strategy (NVS)
 - Namespace: `"route_cache"`
