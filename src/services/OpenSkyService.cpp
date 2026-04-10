@@ -11,17 +11,21 @@ namespace {
 }
 
 // Lookup tables for callsign-prefix → airline/type guessing
-static const struct { const char* prefix; const char* airline; } kAirlineTable[] = {
-    { "AAL", "American Airlines" },
-    { "DAL", "Delta Air Lines"   },
-    { "UAL", "United Airlines"   },
-    { "SWA", "Southwest Airlines"},
-    { "JBU", "JetBlue Airways"   },
-    { "FDX", "FedEx"             },
-    { "UPS", "UPS Airlines"      },
-    { "ASA", "Alaska Airlines"   },
-    { "FFT", "Frontier Airlines" },
-    { "NKS", "Spirit Airlines"   },
+static const struct {
+    const char* prefix;
+    const char* airline;
+    const char* iataCode;  // 2-letter IATA for AeroDataBox lookup
+} kAirlineTable[] = {
+    { "AAL", "American Airlines",  "AA" },
+    { "DAL", "Delta Air Lines",    "DL" },
+    { "UAL", "United Airlines",    "UA" },
+    { "SWA", "Southwest Airlines", "WN" },
+    { "JBU", "JetBlue Airways",    "B6" },
+    { "FDX", "FedEx",              "FX" },
+    { "UPS", "UPS Airlines",       "5X" },
+    { "ASA", "Alaska Airlines",    "AS" },
+    { "FFT", "Frontier Airlines",  "F9" },
+    { "NKS", "Spirit Airlines",    "NK" },
 };
 
 static const struct { const char* prefix; const char* aircraftType; } kTypeTable[] = {
@@ -175,8 +179,10 @@ int OpenSkyService::fetchAircraft(Aircraft* aircraftList, int maxAircraft) {
                         // Default to false (airborne) when null — permissive, prefer showing over hiding aircraft
                         plane.onGround  = state[8].isNull() ? false : state[8].as<bool>();
                         if (plane.onGround) continue;
-                        plane.velocity  = state[9].isNull()  ? 0.0f : state[9].as<float>();
-                        plane.heading   = state[10].isNull() ? 0.0f : state[10].as<float>();
+                        plane.velocity      = state[9].isNull()  ? 0.0f : state[9].as<float>();
+                        plane.heading       = state[10].isNull() ? 0.0f : state[10].as<float>();
+                        plane.verticalRate  = state[11].isNull() ? 0.0f : state[11].as<float>();
+                        plane.squawk        = state[14].isNull() ? "" : state[14].as<String>();
                         plane.valid     = true;
                         plane.aircraftType = guessAircraftType(plane.callsign);
                         plane.airline      = guessAirline(plane.callsign);
@@ -244,4 +250,18 @@ String OpenSkyService::guessAirline(const String& callsign) {
         if (prefix == entry.prefix) return entry.airline;
     }
     return "Airline";
+}
+
+// ========================================
+// IATA Flight Number (for AeroDataBox lookup)
+// ========================================
+String OpenSkyService::getIataFlightNumber(const String& callsign) {
+    if (callsign.length() < 4) return "";
+    String prefix = callsign.substring(0, 3);
+    for (const auto& entry : kAirlineTable) {
+        if (prefix == entry.prefix) {
+            return String(entry.iataCode) + callsign.substring(3);
+        }
+    }
+    return "";
 }

@@ -29,5 +29,8 @@ public:
     // Fetch aircraft in range (FAST - no metadata lookups!)
     int fetchAircraft(Aircraft* aircraftList, int maxAircraft);
 
+    // Convert ICAO callsign prefix to IATA flight number (e.g. "AAL123" -> "AA123")
+    String getIataFlightNumber(const String& callsign);
+
     const String& getLastError() const { return lastError; }
 };

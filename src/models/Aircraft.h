@@ -12,6 +12,8 @@ public:
     float altitude;
     float velocity;
     float heading;
+    float verticalRate;   // m/s, + = climbing
+    String squawk;        // e.g. "1200"
     String aircraftType;
     String airline;
     String origin;
@@ -19,7 +21,8 @@ public:
     bool onGround;
     bool valid;
 
-    Aircraft() : 
+    Aircraft() :
         latitude(0), longitude(0), altitude(0),
-        velocity(0), heading(0), onGround(false), valid(false) {}
+        velocity(0), heading(0), verticalRate(0),
+        onGround(false), valid(false) {}
 };

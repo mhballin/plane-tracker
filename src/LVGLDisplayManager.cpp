@@ -110,17 +110,21 @@ public:
 static LVGLDisplayManager* s_instance = nullptr;
 
 // Color definitions (LVGL uses 0xRRGGBB format for true colors)
-// "Modern Day" Theme - Clean, Professional, Hides Backlight Bleed
-#define COLOR_BG_TOP     lv_color_hex(0xf1f5f9)  // Slate 100 (Light Grey)
-#define COLOR_BG_BOTTOM  lv_color_hex(0xe2e8f0)  // Slate 200 (Slightly darker for gradient)
-#define COLOR_CARD       lv_color_hex(0xffffff)  // Pure White Cards
-#define COLOR_CARD_BORDER lv_color_hex(0xcbd5e1) // Slate 300 (Subtle border)
-#define COLOR_ACCENT     lv_color_hex(0x0284c7)  // Sky 600 (Deep Blue)
-#define COLOR_TEXT_PRIMARY lv_color_hex(0x0f172a) // Slate 900 (Almost Black)
-#define COLOR_TEXT_SECONDARY lv_color_hex(0x64748b) // Slate 500 (Grey text)
-#define COLOR_SUCCESS         lv_color_hex(0x22c55e)  // Green 500
-#define COLOR_WARNING         lv_color_hex(0xf59e0b)  // Amber 500
-#define COLOR_TEXT_ON_ACCENT  lv_color_hex(0xffffff)  // White — text on accent-coloured surfaces
+// Aviation dashboard dark theme
+#define COLOR_BG             lv_color_hex(0x0e1726)
+#define COLOR_TOPBAR         lv_color_hex(0x101f33)
+#define COLOR_PANEL          lv_color_hex(0x162033)
+#define COLOR_INSET          lv_color_hex(0x0a1428)
+#define COLOR_STATUSBAR      lv_color_hex(0x060e1a)
+#define COLOR_ACCENT         lv_color_hex(0x00d4ff)
+#define COLOR_AMBER          lv_color_hex(0xf59e0b)
+#define COLOR_SUCCESS        lv_color_hex(0x22c55e)
+#define COLOR_TEXT_PRIMARY   lv_color_hex(0xeaf6ff)
+#define COLOR_TEXT_SECONDARY lv_color_hex(0x5a8aaa)
+#define COLOR_TEXT_DIM       lv_color_hex(0x2a5070)
+#define COLOR_BORDER         lv_color_hex(0x1e3a54)
+#define COLOR_BORDER_ACCENT  lv_color_hex(0x004466)
+#define COLOR_TEXT_ON_ACCENT lv_color_hex(0x060e1a)
 
 // Constructor
 LVGLDisplayManager::LVGLDisplayManager()
@@ -153,10 +157,13 @@ LVGLDisplayManager::LVGLDisplayManager()
     , label_latitude(nullptr)
     , label_longitude(nullptr)
     , btn_back_home(nullptr)
+    , label_status_home(nullptr)
+    , label_status_aircraft(nullptr)
     , currentScreen(SCREEN_HOME)
     , lastScreenChange(0)
     , lastUserInteraction(0)
     , statusMessage("")
+    , statusClearTime(0)
     , lastUpdateTime(0)
     , currentBrightness(255)
 {
@@ -282,8 +289,8 @@ void LVGLDisplayManager::buildWeatherCard(lv_obj_t* screen) {
     lv_obj_t* weather_card = lv_obj_create(screen);
     lv_obj_set_size(weather_card, 480, 320);
     lv_obj_align(weather_card, LV_ALIGN_TOP_LEFT, 20, 100);
-    lv_obj_set_style_bg_color(weather_card, COLOR_CARD, 0);
-    lv_obj_set_style_border_color(weather_card, COLOR_CARD_BORDER, 0);
+    lv_obj_set_style_bg_color(weather_card, COLOR_PANEL, 0);
+    lv_obj_set_style_border_color(weather_card, COLOR_BORDER, 0);
     lv_obj_set_style_border_width(weather_card, 2, 0);
     lv_obj_set_style_shadow_width(weather_card, 20, 0);
     lv_obj_set_style_shadow_color(weather_card, lv_color_black(), 0);
@@ -394,8 +401,8 @@ void LVGLDisplayManager::buildAircraftCard(lv_obj_t* screen) {
     lv_obj_t* aircraft_card = lv_obj_create(screen);
     lv_obj_set_size(aircraft_card, 260, 320);
     lv_obj_align(aircraft_card, LV_ALIGN_TOP_RIGHT, -20, 100);
-    lv_obj_set_style_bg_color(aircraft_card, COLOR_CARD, 0);
-    lv_obj_set_style_border_color(aircraft_card, COLOR_CARD_BORDER, 0);
+    lv_obj_set_style_bg_color(aircraft_card, COLOR_PANEL, 0);
+    lv_obj_set_style_border_color(aircraft_card, COLOR_BORDER, 0);
     lv_obj_set_style_border_width(aircraft_card, 2, 0);
     lv_obj_set_style_shadow_width(aircraft_card, 20, 0);
     lv_obj_set_style_shadow_color(aircraft_card, lv_color_black(), 0);
@@ -436,42 +443,51 @@ void LVGLDisplayManager::buildAircraftCard(lv_obj_t* screen) {
 
 void LVGLDisplayManager::build_home_screen() {
     screen_home = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen_home, COLOR_BG_TOP, 0);
-    lv_obj_set_style_bg_grad_color(screen_home, COLOR_BG_BOTTOM, 0);
-    lv_obj_set_style_bg_grad_dir(screen_home, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_bg_color(screen_home, COLOR_BG, 0);
+    lv_obj_set_style_bg_grad_dir(screen_home, LV_GRAD_DIR_NONE, 0);
 
     buildTopBar(screen_home);
     buildWeatherCard(screen_home);
     buildAircraftCard(screen_home);
+
+    label_status_home = lv_label_create(screen_home);
+    lv_obj_set_style_text_font(label_status_home, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(label_status_home, COLOR_TEXT_SECONDARY, 0);
+    lv_label_set_text(label_status_home, "");
+    lv_obj_align(label_status_home, LV_ALIGN_BOTTOM_LEFT, 20, -12);
 }
 
 // Build aircraft detail screen
 void LVGLDisplayManager::build_aircraft_screen() {
     screen_aircraft = lv_obj_create(NULL);
-    // Gradient Background
-    lv_obj_set_style_bg_color(screen_aircraft, COLOR_BG_TOP, 0);
-    lv_obj_set_style_bg_grad_color(screen_aircraft, COLOR_BG_BOTTOM, 0);
-    lv_obj_set_style_bg_grad_dir(screen_aircraft, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_bg_color(screen_aircraft, COLOR_BG, 0);
+    lv_obj_set_style_bg_grad_dir(screen_aircraft, LV_GRAD_DIR_NONE, 0);
     
     // Back button
     btn_back_home = lv_button_create(screen_aircraft);
     lv_obj_set_size(btn_back_home, 120, 50);
     lv_obj_align(btn_back_home, LV_ALIGN_TOP_LEFT, 20, 20);
-    lv_obj_set_style_bg_color(btn_back_home, COLOR_CARD, 0);
-    lv_obj_set_style_border_color(btn_back_home, COLOR_CARD_BORDER, 0);
+    lv_obj_set_style_bg_color(btn_back_home, COLOR_PANEL, 0);
+    lv_obj_set_style_border_color(btn_back_home, COLOR_BORDER, 0);
     lv_obj_set_style_border_width(btn_back_home, 2, 0);
     lv_obj_add_event_cb(btn_back_home, event_btn_back_home, LV_EVENT_CLICKED, this);
     
     lv_obj_t* back_label = lv_label_create(btn_back_home);
     lv_label_set_text(back_label, LV_SYMBOL_LEFT " Back");
     lv_obj_center(back_label);
-    
+
+    label_status_aircraft = lv_label_create(screen_aircraft);
+    lv_obj_set_style_text_font(label_status_aircraft, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(label_status_aircraft, COLOR_TEXT_SECONDARY, 0);
+    lv_label_set_text(label_status_aircraft, "");
+    lv_obj_align(label_status_aircraft, LV_ALIGN_BOTTOM_LEFT, 20, -12);
+
     // Aircraft info card
     lv_obj_t* aircraft_card = lv_obj_create(screen_aircraft);
     lv_obj_set_size(aircraft_card, 760, 370);
     lv_obj_align(aircraft_card, LV_ALIGN_CENTER, 0, 10);
-    lv_obj_set_style_bg_color(aircraft_card, COLOR_CARD, 0);
-    lv_obj_set_style_border_color(aircraft_card, COLOR_CARD_BORDER, 0);
+    lv_obj_set_style_bg_color(aircraft_card, COLOR_PANEL, 0);
+    lv_obj_set_style_border_color(aircraft_card, COLOR_BORDER, 0);
     lv_obj_set_style_border_width(aircraft_card, 2, 0);
     lv_obj_set_style_shadow_width(aircraft_card, 20, 0);
     lv_obj_set_style_shadow_color(aircraft_card, lv_color_black(), 0);
@@ -545,17 +561,15 @@ void LVGLDisplayManager::build_aircraft_screen() {
 // Build no aircraft screen
 void LVGLDisplayManager::build_no_aircraft_screen() {
     screen_no_aircraft = lv_obj_create(NULL);
-    // Gradient Background
-    lv_obj_set_style_bg_color(screen_no_aircraft, COLOR_BG_TOP, 0);
-    lv_obj_set_style_bg_grad_color(screen_no_aircraft, COLOR_BG_BOTTOM, 0);
-    lv_obj_set_style_bg_grad_dir(screen_no_aircraft, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_bg_color(screen_no_aircraft, COLOR_BG, 0);
+    lv_obj_set_style_bg_grad_dir(screen_no_aircraft, LV_GRAD_DIR_NONE, 0);
     
     // Back button
     lv_obj_t* btn_back = lv_button_create(screen_no_aircraft);
     lv_obj_set_size(btn_back, 120, 50);
     lv_obj_align(btn_back, LV_ALIGN_TOP_LEFT, 20, 20);
-    lv_obj_set_style_bg_color(btn_back, COLOR_CARD, 0);
-    lv_obj_set_style_border_color(btn_back, COLOR_CARD_BORDER, 0);
+    lv_obj_set_style_bg_color(btn_back, COLOR_PANEL, 0);
+    lv_obj_set_style_border_color(btn_back, COLOR_BORDER, 0);
     lv_obj_set_style_border_width(btn_back, 2, 0);
     lv_obj_add_event_cb(btn_back, event_btn_back_home, LV_EVENT_CLICKED, this);
     
@@ -698,14 +712,22 @@ void LVGLDisplayManager::update_clock() {
     time_t now = time(nullptr);
     struct tm timeinfo;
     if (!getLocalTime(&timeinfo)) return;
-    
+
     char time_buf[16];
-    strftime(time_buf, sizeof(time_buf), "%H:%M", &timeinfo);
+    strftime(time_buf, sizeof(time_buf), "%I:%M %p", &timeinfo);
     lv_label_set_text(label_time, time_buf);
-    
+
     char date_buf[32];
     strftime(date_buf, sizeof(date_buf), "%a, %b %d", &timeinfo);
     lv_label_set_text(label_date, date_buf);
+
+    // Auto-clear status message after timeout
+    if (statusClearTime > 0 && millis() >= statusClearTime) {
+        statusClearTime = 0;
+        statusMessage = "";
+        if (label_status_home)     lv_label_set_text(label_status_home,     "");
+        if (label_status_aircraft) lv_label_set_text(label_status_aircraft, "");
+    }
 }
 
 // Main update function
@@ -796,9 +818,11 @@ void LVGLDisplayManager::setLastUpdateTimestamp(time_t timestamp) {
     lastUpdateTime = timestamp;
 }
 
-// Status message (for compatibility - not displayed in LVGL UI yet)
 void LVGLDisplayManager::setStatusMessage(const String& msg) {
     statusMessage = msg;
+    statusClearTime = millis() + Config::UI_STATUS_MS;
+    if (label_status_home)     lv_label_set_text(label_status_home,     msg.c_str());
+    if (label_status_aircraft) lv_label_set_text(label_status_aircraft, msg.c_str());
 }
 
 // Touch processing (LVGL handles this automatically)
