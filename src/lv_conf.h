@@ -47,11 +47,14 @@
    HAL SETTINGS
  *====================*/
 
+/* OS / threading support — enables lv_lock() / lv_unlock() backed by FreeRTOS recursive mutex */
+#define LV_USE_OS LV_OS_FREERTOS
+
 /* Default display refresh period in ms */
 #define LV_DEF_REFR_PERIOD 30
 
 /* Input device read period in milliseconds */
-#define LV_INDEV_DEF_READ_PERIOD 30
+#define LV_INDEV_DEF_READ_PERIOD 10
 
 /* Disable Helium assembly (for ARM Cortex-M only, not ESP32-S3) */
 #define LV_USE_DRAW_SW_ASM 0
