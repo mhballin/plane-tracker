@@ -5,10 +5,10 @@
 #include <lvgl.h>
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
+#include <esp_timer.h>
 #include "models/Aircraft.h"
 #include "models/WeatherData.h"
 #include "config/Config.h"
-#include <esp_timer.h>
 
 class LGFX_Panel;
 
