@@ -201,7 +201,29 @@ bool LVGLDisplayManager::initialize() {
     
     // Initialize LVGL
     lv_init();
-    
+
+    // 1-ms hardware tick — accurate regardless of main-loop blocking
+    {
+        esp_timer_create_args_t args = {};
+        args.callback = [](void*) { lv_tick_inc(1); };
+        args.name = "lvgl_tick";
+        args.dispatch_method = ESP_TIMER_TASK;
+        esp_timer_create(&args, &lvgl_tick_timer_);
+        esp_timer_start_periodic(lvgl_tick_timer_, 1000 /* µs = 1 ms */);
+    }
+
+    // LVGL handler task — polls touch and drives rendering every 5 ms
+    xTaskCreatePinnedToCore(
+        lvgl_task,          // task function
+        "lvgl",             // name (visible in serial debug)
+        8192,               // stack in bytes
+        nullptr,            // arg (unused — task uses s_instance)
+        2,                  // priority: above idle (0), below WiFi stack (~20)
+        &lvgl_task_handle_, // handle for cleanup
+        1                   // Core 1 — same core as Arduino loop()
+    );
+    Serial.println("[LVGL] FreeRTOS task + tick timer started");
+
     // Create display buffers
     static lv_color_t* buf1 = (lv_color_t*)heap_caps_malloc(LVGL_BUFFER_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     static lv_color_t* buf2 = (lv_color_t*)heap_caps_malloc(LVGL_BUFFER_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
@@ -265,6 +287,16 @@ void LVGLDisplayManager::touchpad_read(lv_indev_t* indev, lv_indev_data_t* data)
         s_instance->lastUserInteraction = millis();
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
+    }
+}
+
+// LVGL handler task — runs independently of main loop
+void LVGLDisplayManager::lvgl_task(void* /*arg*/) {
+    while (true) {
+        lv_lock();
+        lv_timer_handler();
+        lv_unlock();
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
 
