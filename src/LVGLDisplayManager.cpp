@@ -1253,11 +1253,13 @@ void LVGLDisplayManager::update_clock(WeatherWidgets& w) {
 
 // Main update function
 void LVGLDisplayManager::update(const WeatherData& weather, const Aircraft* aircraft, int aircraftCount) {
+    lv_lock();
     if (currentScreen == SCREEN_HOME) {
         update_home_screen(weather, aircraft, aircraftCount);
     } else if (currentScreen == SCREEN_AIRCRAFT_DETAIL && aircraft && aircraft->valid) {
         update_aircraft_screen(*aircraft);
     }
+    lv_unlock();
 }
 
 // Tick is a no-op — the dedicated lvgl_task owns lv_timer_handler now.
@@ -1266,7 +1268,11 @@ void LVGLDisplayManager::tick(uint32_t /*period_ms*/) {}
 // Screen management
 void LVGLDisplayManager::setScreen(ScreenState screen) {
     ScreenState target = (screen == SCREEN_NO_AIRCRAFT) ? SCREEN_HOME : screen;
-    if (currentScreen == target) return;
+    lv_lock();
+    if (currentScreen == target) {
+        lv_unlock();
+        return;
+    }
 
     currentScreen = target;
     lastScreenChange = millis();
@@ -1281,6 +1287,7 @@ void LVGLDisplayManager::setScreen(ScreenState screen) {
         default:
             break;
     }
+    lv_unlock();
 }
 
 // Check if should return to home
@@ -1337,11 +1344,13 @@ void LVGLDisplayManager::setLastUpdateTimestamp(time_t timestamp) {
 }
 
 void LVGLDisplayManager::setStatusMessage(const String& msg) {
+    lv_lock();
     statusMessage = msg;
     statusClearTime = millis() + Config::UI_STATUS_MS;
     if (homeWidgets.label_status_left)  lv_label_set_text(homeWidgets.label_status_left,  msg.c_str());
     if (emptyWidgets.label_status_left) lv_label_set_text(emptyWidgets.label_status_left, msg.c_str());
     if (label_status_aircraft)          lv_label_set_text(label_status_aircraft,           msg.c_str());
+    lv_unlock();
 }
 
 // Touch processing (LVGL handles this automatically)
