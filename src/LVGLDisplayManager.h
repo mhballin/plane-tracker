@@ -8,6 +8,7 @@
 #include "models/Aircraft.h"
 #include "models/WeatherData.h"
 #include "config/Config.h"
+#include <esp_timer.h>
 
 class LGFX_Panel;
 
@@ -103,6 +104,11 @@ private:
     uint32_t statusClearTime;
     time_t lastUpdateTime;
     uint8_t currentBrightness;
+
+    // --- LVGL task / tick timer ---
+    esp_timer_handle_t lvgl_tick_timer_ = nullptr;
+    TaskHandle_t       lvgl_task_handle_ = nullptr;
+    static void        lvgl_task(void* arg);
 
     // --- LVGL callbacks ---
     static void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
