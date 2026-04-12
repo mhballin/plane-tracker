@@ -1260,11 +1260,8 @@ void LVGLDisplayManager::update(const WeatherData& weather, const Aircraft* airc
     }
 }
 
-// Tick function - call frequently in loop()
-void LVGLDisplayManager::tick(uint32_t period_ms) {
-    lv_tick_inc(period_ms);
-    lv_timer_handler();
-}
+// Tick is a no-op — the dedicated lvgl_task owns lv_timer_handler now.
+void LVGLDisplayManager::tick(uint32_t /*period_ms*/) {}
 
 // Screen management
 void LVGLDisplayManager::setScreen(ScreenState screen) {
