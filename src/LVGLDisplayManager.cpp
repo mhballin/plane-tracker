@@ -208,21 +208,17 @@ bool LVGLDisplayManager::initialize() {
         args.callback = [](void*) { lv_tick_inc(1); };
         args.name = "lvgl_tick";
         args.dispatch_method = ESP_TIMER_TASK;
-        esp_timer_create(&args, &lvgl_tick_timer_);
-        esp_timer_start_periodic(lvgl_tick_timer_, 1000 /* µs = 1 ms */);
+        esp_err_t err = esp_timer_create(&args, &lvgl_tick_timer_);
+        if (err != ESP_OK) {
+            Serial.printf("[LVGL] Failed to create tick timer: %s\n", esp_err_to_name(err));
+            return false;
+        }
+        err = esp_timer_start_periodic(lvgl_tick_timer_, 1000 /* µs = 1 ms */);
+        if (err != ESP_OK) {
+            Serial.printf("[LVGL] Failed to start tick timer: %s\n", esp_err_to_name(err));
+            return false;
+        }
     }
-
-    // LVGL handler task — polls touch and drives rendering every 5 ms
-    xTaskCreatePinnedToCore(
-        lvgl_task,          // task function
-        "lvgl",             // name (visible in serial debug)
-        8192,               // stack in bytes
-        nullptr,            // arg (unused — task uses s_instance)
-        2,                  // priority: above idle (0), below WiFi stack (~20)
-        &lvgl_task_handle_, // handle for cleanup
-        1                   // Core 1 — same core as Arduino loop()
-    );
-    Serial.println("[LVGL] FreeRTOS task + tick timer started");
 
     // Create display buffers
     static lv_color_t* buf1 = (lv_color_t*)heap_caps_malloc(LVGL_BUFFER_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
@@ -253,7 +249,23 @@ bool LVGLDisplayManager::initialize() {
     currentScreen = SCREEN_HOME;
     homeHasAircraft = false;
     lastUserInteraction = millis();
-    
+
+    // Start LVGL handler task now that display, indev, and screens are all registered
+    BaseType_t rc = xTaskCreatePinnedToCore(
+        lvgl_task,
+        "lvgl",
+        8192,
+        nullptr,
+        2,
+        &lvgl_task_handle_,
+        1
+    );
+    if (rc != pdPASS) {
+        Serial.println("[LVGL] Failed to create LVGL task");
+        return false;
+    }
+    Serial.println("[LVGL] FreeRTOS task + tick timer started");
+
     Serial.println("[LVGL] Display initialized successfully");
     return true;
 }
