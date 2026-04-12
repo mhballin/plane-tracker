@@ -176,10 +176,17 @@ LVGLDisplayManager::LVGLDisplayManager()
 
 // Destructor
 LVGLDisplayManager::~LVGLDisplayManager() {
-    if (lcd) {
-        delete lcd;
-        lcd = nullptr;
+    if (lvgl_task_handle_) {
+        vTaskDelete(lvgl_task_handle_);
+        lvgl_task_handle_ = nullptr;
     }
+    if (lvgl_tick_timer_) {
+        esp_timer_stop(lvgl_tick_timer_);
+        esp_timer_delete(lvgl_tick_timer_);
+        lvgl_tick_timer_ = nullptr;
+    }
+    delete lcd;
+    lcd = nullptr;
     s_instance = nullptr;
 }
 
@@ -216,6 +223,8 @@ bool LVGLDisplayManager::initialize() {
         err = esp_timer_start_periodic(lvgl_tick_timer_, 1000 /* µs = 1 ms */);
         if (err != ESP_OK) {
             Serial.printf("[LVGL] Failed to start tick timer: %s\n", esp_err_to_name(err));
+            esp_timer_delete(lvgl_tick_timer_);
+            lvgl_tick_timer_ = nullptr;
             return false;
         }
     }
