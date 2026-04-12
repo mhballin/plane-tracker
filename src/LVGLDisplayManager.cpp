@@ -176,10 +176,13 @@ LVGLDisplayManager::LVGLDisplayManager()
 
 // Destructor
 LVGLDisplayManager::~LVGLDisplayManager() {
+    // Acquire lock so the task completes any in-progress handler cycle before being deleted
+    lv_lock();
     if (lvgl_task_handle_) {
         vTaskDelete(lvgl_task_handle_);
         lvgl_task_handle_ = nullptr;
     }
+    lv_unlock();
     if (lvgl_tick_timer_) {
         esp_timer_stop(lvgl_tick_timer_);
         esp_timer_delete(lvgl_tick_timer_);
@@ -212,7 +215,7 @@ bool LVGLDisplayManager::initialize() {
     // 1-ms hardware tick — accurate regardless of main-loop blocking
     {
         esp_timer_create_args_t args = {};
-        args.callback = [](void*) { lv_tick_inc(1); };
+        args.callback = [](void*) { lv_tick_inc(1); };  // lv_tick_inc is IRQ-safe; intentionally outside lv_lock
         args.name = "lvgl_tick";
         args.dispatch_method = ESP_TIMER_TASK;
         esp_err_t err = esp_timer_create(&args, &lvgl_tick_timer_);
@@ -1341,15 +1344,19 @@ String LVGLDisplayManager::formatDate(time_t timestamp) {
 
 // Brightness control
 void LVGLDisplayManager::setBrightness(uint8_t brightness) {
+    lv_lock();
     currentBrightness = brightness;
     if (lcd) {
         lcd->setBrightness(brightness);
     }
+    lv_unlock();
 }
 
 // Timestamp tracking
 void LVGLDisplayManager::setLastUpdateTimestamp(time_t timestamp) {
+    lv_lock();
     lastUpdateTime = timestamp;
+    lv_unlock();
 }
 
 void LVGLDisplayManager::setStatusMessage(const String& msg) {
