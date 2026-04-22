@@ -39,6 +39,9 @@ public:
     bool shouldReturnToHome();
     void processTouch();
 
+    // Returns true (and clears the flag) if the user tapped BACK since last call
+    bool wasUserDismissed();
+
 private:
     LGFX_Panel* lcd;
     lv_display_t* lv_display;
@@ -104,6 +107,7 @@ private:
     uint32_t statusClearTime;
     time_t lastUpdateTime;
     uint8_t currentBrightness;
+    bool userDismissed_;
 
     // --- LVGL task / tick timer ---
     esp_timer_handle_t lvgl_tick_timer_ = nullptr;

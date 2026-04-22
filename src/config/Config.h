@@ -49,14 +49,14 @@ namespace Config {
     // ========================================
     // Tracking Settings
     // ========================================
-    constexpr float VISIBILITY_RANGE = 0.12f;  // ~13km radius (in degrees)
+    constexpr float VISIBILITY_RANGE = 0.45f;  // ~50km radius (in degrees)
     constexpr int MAX_AIRCRAFT = 15;           // Maximum planes to track
 
     // ========================================
     // Update Intervals (milliseconds)
     // ========================================
     constexpr unsigned long WEATHER_UPDATE_INTERVAL = 1800000;  // 30 minutes
-    constexpr unsigned long PLANE_UPDATE_INTERVAL = 60000;      // 1 minute
+    constexpr unsigned long PLANE_UPDATE_INTERVAL = 30000;      // 30 seconds
     constexpr unsigned long DISPLAY_UPDATE_INTERVAL = 1000;     // 1 second
     constexpr unsigned long TOKEN_LIFETIME = 1800000;           // 30 minutes
     constexpr unsigned long PLANE_DISPLAY_TIME = 5000;          // 5 seconds per plane

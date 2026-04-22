@@ -22,3 +22,6 @@ logs/*.log
 
 # Generated credentials (from .env via extra_script.py)
 src/config/credentials.h
+
+# Brainstorming mockups (superpowers visual companion)
+.superpowers/

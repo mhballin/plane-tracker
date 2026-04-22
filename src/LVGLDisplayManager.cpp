@@ -167,6 +167,7 @@ LVGLDisplayManager::LVGLDisplayManager()
     , statusClearTime(0)
     , lastUpdateTime(0)
     , currentBrightness(255)
+    , userDismissed_(false)
 {
     for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
         radar_blips[i] = nullptr;
@@ -250,6 +251,8 @@ bool LVGLDisplayManager::initialize() {
     lv_indev = lv_indev_create();
     lv_indev_set_type(lv_indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(lv_indev, touchpad_read);
+    lv_indev_set_disp(lv_indev, lv_display);   // LVGL 9: explicitly bind indev to display
+    lv_indev_set_scroll_limit(lv_indev, 20);   // 20px before tap becomes scroll (default 10 too sensitive)
     
     // Build screens
     build_home_screen();
@@ -383,7 +386,7 @@ void LVGLDisplayManager::buildStatusBar(lv_obj_t* screen, WeatherWidgets& w) {
     w.label_status_live = lv_label_create(bar);
     lv_obj_set_style_text_font(w.label_status_live, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(w.label_status_live, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(w.label_status_live, "● IDLE");
+    lv_label_set_text(w.label_status_live, "IDLE");
     lv_obj_align(w.label_status_live, LV_ALIGN_RIGHT_MID, 0, 0);
 }
 
@@ -584,7 +587,7 @@ void LVGLDisplayManager::updateWeatherWidgets(WeatherWidgets& w,
             struct tm ti;
             getLocalTime(&ti);
             strftime(ts, sizeof(ts), "%H:%M", &ti);
-            snprintf(buf, sizeof(buf), "OPENSKY OK \xc2\xb7 %s", ts);
+            snprintf(buf, sizeof(buf), "OPENSKY OK / %s", ts);
             lv_label_set_text(w.label_status_left, buf);
         } else {
             lv_label_set_text(w.label_status_left, "NO AIRCRAFT DETECTED");
@@ -593,10 +596,10 @@ void LVGLDisplayManager::updateWeatherWidgets(WeatherWidgets& w,
     if (w.label_status_live) {
         if (aircraftCount > 0) {
             lv_obj_set_style_text_color(w.label_status_live, COLOR_SUCCESS, 0);
-            lv_label_set_text(w.label_status_live, "\xe2\x97\x8f LIVE");
+            lv_label_set_text(w.label_status_live, "LIVE");
         } else {
             lv_obj_set_style_text_color(w.label_status_live, COLOR_TEXT_DIM, 0);
-            lv_label_set_text(w.label_status_live, "\xe2\x97\x8f IDLE");
+            lv_label_set_text(w.label_status_live, "IDLE");
         }
     }
 }
@@ -654,7 +657,7 @@ void LVGLDisplayManager::buildRadarPanel(lv_obj_t* parent) {
     lv_obj_t* hdr = lv_label_create(parent);
     lv_obj_set_style_text_font(hdr, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(hdr, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(hdr, "AREA CONTACTS");
+    lv_label_set_text(hdr, "NEARBY PLANES");
 
     // Radar circle (190x190)
     radar_container = lv_obj_create(parent);
@@ -710,7 +713,7 @@ void LVGLDisplayManager::buildRadarPanel(lv_obj_t* parent) {
     lv_obj_t* lbl_units = lv_label_create(parent);
     lv_obj_set_style_text_font(lbl_units, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lbl_units, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(lbl_units, "CONTACTS");
+    lv_label_set_text(lbl_units, "PLANES");
 
     // VIEW AIRCRAFT button
     btn_view_planes = lv_button_create(parent);
@@ -881,13 +884,6 @@ void LVGLDisplayManager::build_home_empty_screen() {
     lv_label_set_text(emptyWidgets.label_sunset, LV_SYMBOL_DOWN " --:--");
     lv_obj_set_pos(emptyWidgets.label_sunset, 80, 180);
 
-    // No-contacts watermark
-    lv_obj_t* watermark = lv_label_create(screen_home_empty);
-    lv_obj_set_style_text_font(watermark, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(watermark, COLOR_BORDER, 0);
-    lv_label_set_text(watermark, "NO CONTACTS IN RANGE");
-    lv_obj_align(watermark, LV_ALIGN_BOTTOM_MID, 0, -32);
-
     // Right column: 5-day forecast (flex-fill)
     lv_obj_t* right_col = lv_obj_create(body);
     lv_obj_set_flex_grow(right_col, 1);
@@ -1004,7 +1000,7 @@ void LVGLDisplayManager::build_aircraft_screen() {
     label_distance = lv_label_create(topbar);
     lv_obj_set_style_text_font(label_distance, &lv_font_montserrat_22, 0);
     lv_obj_set_style_text_color(label_distance, COLOR_TEXT_PRIMARY, 0);
-    lv_label_set_text(label_distance, "-- nm \xc2\xb7 --\xc2\xb0");
+    lv_label_set_text(label_distance, "-- nm / --\xc2\xb0");
     lv_obj_align(label_distance, LV_ALIGN_RIGHT_MID, -18, -8);
 
     lv_obj_t* lbl_loc = lv_label_create(topbar);
@@ -1182,7 +1178,7 @@ void LVGLDisplayManager::update_aircraft_screen(const Aircraft& aircraft) {
     const char* card = GeoUtils::cardinalDir(bearing);
 
     char dist_buf[48];
-    snprintf(dist_buf, sizeof(dist_buf), "%.1f nm  \xc2\xb7  %.0f\xc2\xb0 %s", distNm, bearing, card);
+    snprintf(dist_buf, sizeof(dist_buf), "%.1f nm / %.0f\xc2\xb0 %s", distNm, bearing, card);
     lv_label_set_text(label_distance, dist_buf);
 
     // Identity cards
@@ -1196,12 +1192,24 @@ void LVGLDisplayManager::update_aircraft_screen(const Aircraft& aircraft) {
     // Route block
     if (aircraft.origin.length() > 0 && aircraft.destination.length() > 0) {
         char route_buf[64];
-        snprintf(route_buf, sizeof(route_buf), "%s  \xe2\x86\x92  %s",
+        snprintf(route_buf, sizeof(route_buf), "%s  >  %s",
                  aircraft.origin.c_str(), aircraft.destination.c_str());
         lv_label_set_text(label_route_main, route_buf);
         lv_obj_set_style_text_color(label_route_main, COLOR_ACCENT, 0);
-        lv_label_set_text(label_route_sub, "");
-    } else if (aircraft.callsign.length() > 0) {
+
+        // Sub-label: city names (e.g. "Boston, US  ·  Los Angeles, US")
+        if (aircraft.originDisplay.length() > 0 || aircraft.destinationDisplay.length() > 0) {
+            char sub_buf[96];
+            const char* orgStr = aircraft.originDisplay.length() > 0
+                ? aircraft.originDisplay.c_str() : aircraft.origin.c_str();
+            const char* dstStr = aircraft.destinationDisplay.length() > 0
+                ? aircraft.destinationDisplay.c_str() : aircraft.destination.c_str();
+            snprintf(sub_buf, sizeof(sub_buf), "%s  |  %s", orgStr, dstStr);
+            lv_label_set_text(label_route_sub, sub_buf);
+        } else {
+            lv_label_set_text(label_route_sub, "");
+        }
+    } else if (!aircraft.routeLookupDone) {
         lv_label_set_text(label_route_main, "LOOKING UP...");
         lv_obj_set_style_text_color(label_route_main, COLOR_TEXT_DIM, 0);
         lv_label_set_text(label_route_sub, "");
@@ -1321,8 +1329,17 @@ void LVGLDisplayManager::event_btn_view_planes(lv_event_t* e) {
 void LVGLDisplayManager::event_btn_back_home(lv_event_t* e) {
     LVGLDisplayManager* mgr = (LVGLDisplayManager*)lv_event_get_user_data(e);
     if (mgr) {
+        mgr->userDismissed_ = true;  // signal App to suppress auto-switch
         mgr->setScreen(SCREEN_HOME);
     }
+}
+
+bool LVGLDisplayManager::wasUserDismissed() {
+    lv_lock();
+    bool result = userDismissed_;
+    userDismissed_ = false;
+    lv_unlock();
+    return result;
 }
 
 // Utility functions

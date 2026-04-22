@@ -9,16 +9,19 @@ class RouteCache {
 public:
     RouteCache();
 
-    /// Check NVS, then fetch from AeroDataBox if not cached.
-    /// Returns true and populates origin/destination on success.
-    /// origin/destination are IATA airport codes (e.g. "BOS", "LAX").
-    bool lookup(const String& callsign, String& origin, String& destination,
-                String& originName, String& destinationName);
+    /// Check NVS, then try hexdb.io → adsbdb → AeroDataBox.
+    /// Returns true and populates all fields on success.
+    /// origin/destination are IATA codes; city/country are human-readable.
+    bool lookup(const String& callsign,
+                String& origin, String& destination,
+                String& originCity, String& originCountry,
+                String& destinationCity, String& destinationCountry);
 
     /// Store a resolved route in NVS.
     void store(const String& callsign,
                const String& origin, const String& destination,
-               const String& originName, const String& destinationName);
+               const String& originCity, const String& originCountry,
+               const String& destinationCity, const String& destinationCountry);
 
 private:
     Preferences prefs_;
@@ -26,8 +29,20 @@ private:
     /// Convert ICAO callsign prefix to IATA flight number (e.g. "UAL1234" -> "UA1234").
     String toIataFlightNumber(const String& callsign);
 
-    /// HTTP fetch from AeroDataBox. Returns true on success.
+    /// HTTP fetch from hexdb.io (free, no key, best coverage). Returns true on success.
+    bool fetchFromHexdb(const String& callsign,
+                        String& origin, String& destination,
+                        String& originCity, String& originCountry,
+                        String& destinationCity, String& destinationCountry);
+
+    /// HTTP fetch from adsbdb.com (free, no key, ICAO callsign direct). Returns true on success.
+    bool fetchFromAdsbdb(const String& callsign,
+                         String& origin, String& destination,
+                         String& originCity, String& originCountry,
+                         String& destinationCity, String& destinationCountry);
+
+    /// HTTP fetch from AeroDataBox (paid fallback). Returns true on success.
     bool fetchFromApi(const String& iataFlightNumber,
                       String& origin, String& destination,
-                      String& originName, String& destinationName);
+                      String& originCity, String& destinationCity);
 };

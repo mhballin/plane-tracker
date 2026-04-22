@@ -59,6 +59,7 @@ private:
     RouteCache*   routeCache_;
     bool          routeFetchDone_;
     String        lastRouteFetchCallsign_;
+    bool          aircraftDismissed_;
 
     SerialCommandHandler serial_;
 };

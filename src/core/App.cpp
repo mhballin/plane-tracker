@@ -24,6 +24,7 @@ App::App()
     , routeCache_(nullptr)
     , routeFetchDone_(false)
     , lastRouteFetchCallsign_("")
+    , aircraftDismissed_(false)
     , serial_(nullptr) {
 }
 
@@ -121,6 +122,22 @@ void App::tick() {
     }
 
     if (display_) {
+        // Absorb any "user tapped BACK" signal before making auto-switch decisions
+        if (display_->wasUserDismissed()) {
+            aircraftDismissed_ = true;
+        }
+
+        // Reset dismissed state when sky clears — next encounter will auto-switch again
+        if (currentAircraftCount_ == 0) {
+            aircraftDismissed_ = false;
+        }
+
+        // Auto-switch to aircraft detail when a plane enters range (unless user dismissed)
+        if (currentAircraftCount_ > 0 && !aircraftDismissed_
+                && display_->getCurrentScreen() != LVGLDisplayManager::SCREEN_AIRCRAFT_DETAIL) {
+            display_->setScreen(LVGLDisplayManager::SCREEN_AIRCRAFT_DETAIL);
+        }
+
         uint32_t changedAt = display_->getLastScreenChangeTime();
         if (changedAt != 0 && changedAt != lastRedrawnScreenChange_) {
             if (display_->getCurrentScreen() == LVGLDisplayManager::SCREEN_AIRCRAFT_DETAIL) {
@@ -131,7 +148,8 @@ void App::tick() {
             lastRedrawnScreenChange_ = changedAt;
         }
 
-        if (display_->shouldReturnToHome()) {
+        // Only auto-return to home when no aircraft are present
+        if (display_->shouldReturnToHome() && currentAircraftCount_ == 0) {
             display_->setScreen(LVGLDisplayManager::SCREEN_HOME);
         }
     }
@@ -235,7 +253,7 @@ void App::updateDisplay() {
     LVGLDisplayManager::ScreenState screen = display_->getCurrentScreen();
 
     if (screen == LVGLDisplayManager::SCREEN_HOME) {
-        display_->update(currentWeather_, nullptr, currentAircraftCount_);
+        display_->update(currentWeather_, aircraftList_, currentAircraftCount_);
         return;
     }
 
@@ -249,17 +267,29 @@ void App::updateDisplay() {
             // Trigger route lookup once per callsign; clear stale data on callsign change
             if (routeCache_ && cur.callsign != lastRouteFetchCallsign_) {
                 lastRouteFetchCallsign_ = cur.callsign;
-                cur.origin      = "";
-                cur.destination = "";
-                routeFetchDone_ = false;
+                cur.origin              = "";
+                cur.destination         = "";
+                cur.originDisplay       = "";
+                cur.destinationDisplay  = "";
+                cur.routeLookupDone     = false;
+                routeFetchDone_         = false;
             }
             if (routeCache_ && !routeFetchDone_ && !cur.callsign.isEmpty()) {
-                String org, dst, orgName, dstName;
-                if (routeCache_->lookup(cur.callsign, org, dst, orgName, dstName)) {
+                String org, dst, orgCity, orgCountry, dstCity, dstCountry;
+                if (routeCache_->lookup(cur.callsign, org, dst, orgCity, orgCountry, dstCity, dstCountry)) {
                     cur.origin      = org;
                     cur.destination = dst;
+                    if (!orgCity.isEmpty()) {
+                        cur.originDisplay = orgCity;
+                        if (!orgCountry.isEmpty()) cur.originDisplay += ", " + orgCountry;
+                    }
+                    if (!dstCity.isEmpty()) {
+                        cur.destinationDisplay = dstCity;
+                        if (!dstCountry.isEmpty()) cur.destinationDisplay += ", " + dstCountry;
+                    }
                 }
-                routeFetchDone_ = true;  // mark done after attempt (success or failure)
+                cur.routeLookupDone = true;  // mark done after attempt (success or failure)
+                routeFetchDone_     = true;
             }
 
             display_->update(currentWeather_, &cur, currentAircraftCount_);

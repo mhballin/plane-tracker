@@ -9,9 +9,42 @@ static constexpr char NVS_NS[] = "route_cache";
 
 // ICAO -> IATA mapping (must stay in sync with OpenSkyService kAirlineTable)
 static const struct { const char* icao; const char* iata; } kIataMap[] = {
-    { "AAL", "AA" }, { "DAL", "DL" }, { "UAL", "UA" }, { "SWA", "WN" },
-    { "JBU", "B6" }, { "FDX", "FX" }, { "UPS", "5X" }, { "ASA", "AS" },
-    { "FFT", "F9" }, { "NKS", "NK" },
+    // US Major
+    {"AAL","AA"},{"DAL","DL"},{"UAL","UA"},{"SWA","WN"},{"JBU","B6"},
+    {"ASA","AS"},{"FFT","F9"},{"NKS","NK"},{"HAL","HA"},{"SCX","SY"},
+    // US Regional
+    {"SKW","OO"},{"RPA","YX"},{"ENY","MQ"},{"PDT","PT"},{"PSA","OH"},
+    {"QXE","QX"},{"ASH","YV"},{"KAP","9K"},{"GJS","G7"},{"AWI","ZW"},
+    {"SLV","3M"},{"VTE","LF"},
+    // US Cargo
+    {"FDX","FX"},{"UPS","5X"},{"GTI","5Y"},{"ABX","GB"},{"ATN","8C"},
+    {"KFS","K4"},{"PAC","PO"},{"NCR","N8"},{"AMF","M6"},
+    // Canada
+    {"ACA","AC"},{"WJA","WS"},{"TSC","TS"},{"PDM","PD"},{"JZA","QK"},
+    {"SWG","WG"},{"CJT","W8"},
+    // Latin America & Caribbean
+    {"AMX","AM"},{"VOI","Y4"},{"VIV","VB"},{"CMP","CM"},{"AVA","AV"},
+    {"LAN","LA"},{"TAM","JJ"},{"GLO","G3"},{"AZU","AD"},{"BWA","BW"},{"BHS","UP"},
+    // Europe
+    {"BAW","BA"},{"VIR","VS"},{"DLH","LH"},{"AFR","AF"},{"KLM","KL"},{"IBE","IB"},
+    {"AZA","AZ"},{"SAS","SK"},{"TAP","TP"},{"EIN","EI"},{"FIN","AY"},
+    {"LOT","LO"},{"CSA","OK"},{"AUA","OS"},{"SWR","LX"},{"ELY","LY"},
+    {"THY","TK"},{"ICE","FI"},{"TRA","HV"},{"WZZ","W6"},{"EWG","EW"},
+    {"BEL","SN"},{"VLG","VY"},{"NAX","DY"},{"RYR","FR"},{"EZY","U2"},
+    {"CLH","CL"},{"AEE","A3"},{"TOM","BY"},{"EXS","LS"},{"LOG","LM"},
+    {"VOE","V7"},{"CLX","CV"},
+    // Middle East
+    {"UAE","EK"},{"ETD","EY"},{"QTR","QR"},{"SVA","SV"},{"MSR","MS"},
+    {"RJA","RJ"},{"MEA","ME"},{"GFA","GF"},{"OMA","WY"},{"FDB","FZ"},{"ABY","G9"},
+    // Africa
+    {"ETH","ET"},{"KQA","KQ"},{"RAM","AT"},{"SAA","SA"},
+    // Asia-Pacific
+    {"ANA","NH"},{"JAL","JL"},{"CPA","CX"},{"KAL","KE"},{"AAR","OZ"},
+    {"CES","MU"},{"CSN","CZ"},{"CCA","CA"},{"EVA","BR"},{"CAL","CI"},
+    {"MAS","MH"},{"SIA","SQ"},{"THA","TG"},{"VNA","VN"},{"PAL","PR"},
+    {"GIA","GA"},{"AIC","AI"},{"IGO","6E"},{"AXM","AK"},
+    // Oceania
+    {"QFA","QF"},{"ANZ","NZ"},{"JST","JQ"},{"VAH","VA"},
 };
 
 RouteCache::RouteCache() {}
@@ -29,63 +62,218 @@ String RouteCache::toIataFlightNumber(const String& callsign) {
 
 bool RouteCache::lookup(const String& callsign,
                          String& origin, String& destination,
-                         String& originName, String& destinationName) {
+                         String& originCity, String& originCountry,
+                         String& destinationCity, String& destinationCountry) {
     if (callsign.isEmpty()) return false;
 
     // Check NVS first
-    prefs_.begin(NVS_NS, true);  // read-only
+    // New format (6 fields): "BOS|New York|US|LAX|Los Angeles|US"
+    // Old format (4 fields): "BOS|Boston Logan|LAX|Los Angeles Intl"
+    prefs_.begin(NVS_NS, true);
     String cached = prefs_.getString(callsign.c_str(), "");
     prefs_.end();
 
     if (cached.length() > 0) {
-        // Format: "BOS|Boston Logan|LAX|Los Angeles Intl"
         int p1 = cached.indexOf('|');
         int p2 = cached.indexOf('|', p1 + 1);
         int p3 = cached.indexOf('|', p2 + 1);
-        if (p1 > 0 && p2 > p1 && p3 > p2) {
+        int p4 = cached.indexOf('|', p3 + 1);
+        int p5 = cached.indexOf('|', p4 + 1);
+
+        if (p5 > p4) {
+            // New 6-field format
             origin          = cached.substring(0, p1);
-            originName      = cached.substring(p1 + 1, p2);
+            originCity      = cached.substring(p1 + 1, p2);
+            originCountry   = cached.substring(p2 + 1, p3);
+            destination     = cached.substring(p3 + 1, p4);
+            destinationCity = cached.substring(p4 + 1, p5);
+            destinationCountry = cached.substring(p5 + 1);
+            return true;
+        } else if (p3 > p2) {
+            // Old 4-field format — still usable, just no country
+            origin          = cached.substring(0, p1);
+            originCity      = cached.substring(p1 + 1, p2);
+            originCountry   = "";
             destination     = cached.substring(p2 + 1, p3);
-            destinationName = cached.substring(p3 + 1);
+            destinationCity = cached.substring(p3 + 1);
+            destinationCountry = "";
             return true;
         }
     }
 
-    // Not in NVS -- try API
-    String iataFlight = toIataFlightNumber(callsign);
-    if (iataFlight.isEmpty()) return false;
-
-    // Skip if key is placeholder
-    String key = Config::AERODATABOX_API_KEY;
-    if (key == "your-aerodatabox-api-key" || key.isEmpty()) return false;
-
-    if (fetchFromApi(iataFlight, origin, destination, originName, destinationName)) {
-        store(callsign, origin, destination, originName, destinationName);
+    // 1. hexdb.io (free, best coverage, returns full city+country)
+    if (fetchFromHexdb(callsign, origin, destination, originCity, originCountry, destinationCity, destinationCountry)) {
+        store(callsign, origin, destination, originCity, originCountry, destinationCity, destinationCountry);
         return true;
     }
+
+    // 2. adsbdb.com (free fallback)
+    if (fetchFromAdsbdb(callsign, origin, destination, originCity, originCountry, destinationCity, destinationCountry)) {
+        store(callsign, origin, destination, originCity, originCountry, destinationCity, destinationCountry);
+        return true;
+    }
+
+    // 3. AeroDataBox (paid fallback)
+    String iataFlight = toIataFlightNumber(callsign);
+    if (!iataFlight.isEmpty()) {
+        String key = Config::AERODATABOX_API_KEY;
+        if (key != "your-aerodatabox-api-key" && !key.isEmpty()) {
+            if (fetchFromApi(iataFlight, origin, destination, originCity, destinationCity)) {
+                store(callsign, origin, destination, originCity, "", destinationCity, "");
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 
 void RouteCache::store(const String& callsign,
                         const String& origin, const String& destination,
-                        const String& originName, const String& destinationName) {
-    // NVS key max length = 15 chars; guard against unexpectedly long callsigns
+                        const String& originCity, const String& originCountry,
+                        const String& destinationCity, const String& destinationCountry) {
     if (callsign.length() > 15) {
         Serial.printf("[RouteCache] Callsign too long for NVS key: %s\n", callsign.c_str());
         return;
     }
-    String value = origin + "|" + originName + "|" + destination + "|" + destinationName;
-    prefs_.begin(NVS_NS, false);  // read-write
+    // New 6-field format: "BOS|New York|US|LAX|Los Angeles|US"
+    String value = origin + "|" + originCity + "|" + originCountry + "|"
+                 + destination + "|" + destinationCity + "|" + destinationCountry;
+    prefs_.begin(NVS_NS, false);
     prefs_.putString(callsign.c_str(), value);
     prefs_.end();
-    Serial.printf("[RouteCache] Stored: %s -> %s|%s\n",
-                  callsign.c_str(), origin.c_str(), destination.c_str());
+    Serial.printf("[RouteCache] Stored: %s -> %s (%s, %s) -> %s (%s, %s)\n",
+                  callsign.c_str(),
+                  origin.c_str(), originCity.c_str(), originCountry.c_str(),
+                  destination.c_str(), destinationCity.c_str(), destinationCountry.c_str());
 }
 
+// ========================================
+// hexdb.io — free, best route coverage
+// GET https://hexdb.io/callsign-route?callsign=BAW100
+// Returns full airport objects with municipality + country_iso_name
+// ========================================
+bool RouteCache::fetchFromHexdb(const String& callsign,
+                                  String& origin, String& destination,
+                                  String& originCity, String& originCountry,
+                                  String& destinationCity, String& destinationCountry) {
+    String url = String("https://hexdb.io/callsign-route?callsign=") + callsign;
+
+    HTTPClient http;
+    http.begin(url);
+    http.setTimeout(8000);
+
+    Serial.printf("[RouteCache] hexdb GET %s\n", url.c_str());
+    int code = http.GET();
+
+    if (code != 200) {
+        Serial.printf("[RouteCache] hexdb HTTP %d\n", code);
+        http.end();
+        return false;
+    }
+
+    String payload = http.getString();
+    http.end();
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, payload);
+    if (err) {
+        Serial.printf("[RouteCache] hexdb JSON error: %s\n", err.c_str());
+        return false;
+    }
+
+    // hexdb response: { "callsign": "...", "flightroute": { "origin": {...}, "destination": {...} } }
+    JsonObject fr = doc["flightroute"];
+    if (fr.isNull()) {
+        Serial.println("[RouteCache] hexdb: no flightroute in response");
+        return false;
+    }
+
+    JsonObject org = fr["origin"];
+    JsonObject dst = fr["destination"];
+    if (org.isNull() || dst.isNull()) return false;
+
+    origin          = org["iata_code"].as<String>();
+    originCity      = org["municipality"].as<String>();
+    originCountry   = org["country_iso_name"].as<String>();
+    destination     = dst["iata_code"].as<String>();
+    destinationCity = dst["municipality"].as<String>();
+    destinationCountry = dst["country_iso_name"].as<String>();
+
+    if (origin.isEmpty() || origin == "null" || destination.isEmpty() || destination == "null") {
+        return false;
+    }
+
+    Serial.printf("[RouteCache] hexdb: %s (%s, %s) -> %s (%s, %s)\n",
+                  origin.c_str(), originCity.c_str(), originCountry.c_str(),
+                  destination.c_str(), destinationCity.c_str(), destinationCountry.c_str());
+    return true;
+}
+
+// ========================================
+// adsbdb.com fallback
+// ========================================
+bool RouteCache::fetchFromAdsbdb(const String& callsign,
+                                  String& origin, String& destination,
+                                  String& originCity, String& originCountry,
+                                  String& destinationCity, String& destinationCountry) {
+    String url = String("https://api.adsbdb.com/v0/callsign/") + callsign;
+
+    HTTPClient http;
+    http.begin(url);
+    http.setTimeout(8000);
+
+    Serial.printf("[RouteCache] adsbdb GET %s\n", url.c_str());
+    int code = http.GET();
+
+    if (code != 200) {
+        Serial.printf("[RouteCache] adsbdb HTTP %d\n", code);
+        http.end();
+        return false;
+    }
+
+    String payload = http.getString();
+    http.end();
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, payload);
+    if (err) {
+        Serial.printf("[RouteCache] adsbdb JSON error: %s\n", err.c_str());
+        return false;
+    }
+
+    if (!doc["response"].is<JsonObject>()) return false;
+
+    JsonObject fr = doc["response"]["flightroute"];
+    if (fr.isNull()) return false;
+
+    JsonObject org = fr["origin"];
+    JsonObject dst = fr["destination"];
+    if (org.isNull() || dst.isNull()) return false;
+
+    origin          = org["iata_code"].as<String>();
+    originCity      = org["municipality"].as<String>();
+    originCountry   = org["country_iso_name"].as<String>();
+    destination     = dst["iata_code"].as<String>();
+    destinationCity = dst["municipality"].as<String>();
+    destinationCountry = dst["country_iso_name"].as<String>();
+
+    if (origin.isEmpty() || origin == "null" || destination.isEmpty() || destination == "null") {
+        return false;
+    }
+
+    Serial.printf("[RouteCache] adsbdb: %s (%s, %s) -> %s (%s, %s)\n",
+                  origin.c_str(), originCity.c_str(), originCountry.c_str(),
+                  destination.c_str(), destinationCity.c_str(), destinationCountry.c_str());
+    return true;
+}
+
+// ========================================
+// AeroDataBox paid fallback
+// ========================================
 bool RouteCache::fetchFromApi(const String& iataFlightNumber,
                                String& origin, String& destination,
-                               String& originName, String& destinationName) {
-    // Today's date in YYYY-MM-DD
+                               String& originCity, String& destinationCity) {
     struct tm ti;
     if (!getLocalTime(&ti)) return false;
     char dateBuf[12];
@@ -102,11 +290,11 @@ bool RouteCache::fetchFromApi(const String& iataFlightNumber,
     http.addHeader("x-rapidapi-key",  Config::AERODATABOX_API_KEY);
     http.addHeader("x-rapidapi-host", "aerodatabox.p.rapidapi.com");
 
-    Serial.printf("[RouteCache] GET %s\n", url.c_str());
+    Serial.printf("[RouteCache] AeroDataBox GET %s\n", url.c_str());
     int code = http.GET();
 
     if (code != 200) {
-        Serial.printf("[RouteCache] HTTP %d\n", code);
+        Serial.printf("[RouteCache] AeroDataBox HTTP %d\n", code);
         http.end();
         return false;
     }
@@ -117,34 +305,32 @@ bool RouteCache::fetchFromApi(const String& iataFlightNumber,
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, payload);
     if (err) {
-        Serial.printf("[RouteCache] JSON error: %s\n", err.c_str());
+        Serial.printf("[RouteCache] AeroDataBox JSON error: %s\n", err.c_str());
         return false;
     }
 
-    // AeroDataBox returns an array; use first element
     JsonArray arr = doc.as<JsonArray>();
     if (arr.isNull() || arr.size() == 0) {
-        // Some responses are objects wrapped in array -- try root object
         if (!doc["departure"].isNull()) {
             origin          = doc["departure"]["airport"]["iata"].as<String>();
-            originName      = doc["departure"]["airport"]["name"].as<String>();
+            originCity      = doc["departure"]["airport"]["municipalityName"].as<String>();
             destination     = doc["arrival"]["airport"]["iata"].as<String>();
-            destinationName = doc["arrival"]["airport"]["name"].as<String>();
+            destinationCity = doc["arrival"]["airport"]["municipalityName"].as<String>();
         } else {
             return false;
         }
     } else {
         JsonObject flight = arr[0];
         origin          = flight["departure"]["airport"]["iata"].as<String>();
-        originName      = flight["departure"]["airport"]["name"].as<String>();
+        originCity      = flight["departure"]["airport"]["municipalityName"].as<String>();
         destination     = flight["arrival"]["airport"]["iata"].as<String>();
-        destinationName = flight["arrival"]["airport"]["name"].as<String>();
+        destinationCity = flight["arrival"]["airport"]["municipalityName"].as<String>();
     }
 
     if (origin.isEmpty() || destination.isEmpty()) return false;
 
-    Serial.printf("[RouteCache] Resolved: %s -> %s (%s -> %s)\n",
-                  origin.c_str(), destination.c_str(),
-                  originName.c_str(), destinationName.c_str());
+    Serial.printf("[RouteCache] AeroDataBox: %s (%s) -> %s (%s)\n",
+                  origin.c_str(), originCity.c_str(),
+                  destination.c_str(), destinationCity.c_str());
     return true;
 }
