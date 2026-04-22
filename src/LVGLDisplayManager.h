@@ -25,9 +25,8 @@ public:
     void setStatusMessage(const String& msg);
 
     enum ScreenState {
-        SCREEN_HOME,
-        SCREEN_AIRCRAFT_DETAIL,
-        SCREEN_NO_AIRCRAFT  // treated as SCREEN_HOME internally
+        SCREEN_HOME,   // weather + quiet airspace panel
+        SCREEN_RADAR,  // full radar + aircraft list
     };
 
     void setScreen(ScreenState screen);
@@ -47,12 +46,7 @@ private:
     lv_display_t* lv_display;
     lv_indev_t*   lv_indev;
 
-    // --- Screens ---
-    lv_obj_t* screen_home;        // home with radar panel (aircraft present)
-    lv_obj_t* screen_home_empty;  // home full-width weather (no aircraft)
-    lv_obj_t* screen_aircraft;    // aircraft detail
-
-    // --- Shared weather widget set (one per home screen variant) ---
+    // --- Shared weather widget set ---
     struct WeatherWidgets {
         lv_obj_t* label_time         = nullptr;
         lv_obj_t* label_date         = nullptr;
@@ -74,33 +68,60 @@ private:
             lv_obj_t* label_lo   = nullptr;
         } forecast[5];
     };
-    WeatherWidgets homeWidgets;   // aircraft-present screen
-    WeatherWidgets emptyWidgets;  // no-aircraft screen
+    // Radar blip on the radar screen (one per MAX_AIRCRAFT slot)
+    struct RadarBlip {
+        lv_obj_t*    dot    = nullptr;
+        lv_obj_t*    vector = nullptr;  // lv_line, heading direction
+        lv_obj_t*    label  = nullptr;  // callsign text
+        lv_point_t   vec_pts[2] = {};   // kept alive for lv_line
+    };
 
-    // --- Radar panel widgets (screen_home only) ---
-    lv_obj_t* radar_container;
-    lv_obj_t* radar_blips[Config::MAX_AIRCRAFT];
-    lv_obj_t* label_contact_count;
-    lv_obj_t* btn_view_planes;
+    // One row in the aircraft list panel
+    struct AircraftListRow {
+        lv_obj_t* container      = nullptr;  // tappable row
+        lv_obj_t* accent_bar     = nullptr;
+        lv_obj_t* label_callsign = nullptr;
+        lv_obj_t* label_type_route = nullptr;
+        lv_obj_t* label_summary  = nullptr;  // visible when collapsed
+        lv_obj_t* expanded_panel = nullptr;  // hidden when collapsed
+        lv_obj_t* label_alt      = nullptr;
+        lv_obj_t* label_speed    = nullptr;
+        lv_obj_t* label_hdg      = nullptr;
+        lv_obj_t* label_dist     = nullptr;
+        lv_obj_t* label_status   = nullptr;
+    };
 
-    // --- Aircraft detail screen widgets ---
-    lv_obj_t* label_callsign;
-    lv_obj_t* label_distance;       // "42.3 nm · 047° NE"
-    lv_obj_t* label_airline;
-    lv_obj_t* label_aircraft_type;
-    lv_obj_t* label_squawk;
-    lv_obj_t* label_route_main;     // "BOS → LAX" large
-    lv_obj_t* label_route_sub;      // "Boston · Los Angeles"
-    lv_obj_t* label_altitude;
-    lv_obj_t* label_velocity;
-    lv_obj_t* label_heading;
-    lv_obj_t* label_vert_speed;     // color-coded fpm
-    lv_obj_t* label_status_aircraft;
-    lv_obj_t* btn_back_home;
+    // --- Screens ---
+    lv_obj_t* screen_home  = nullptr;
+    lv_obj_t* screen_radar = nullptr;
+
+    // --- Home screen widgets ---
+    WeatherWidgets homeWidgets;
+
+    // Airspace status panel (on home screen)
+    lv_obj_t* airspace_circle_    = nullptr;
+    lv_obj_t* airspace_coastline_ = nullptr;
+    lv_point_t airspace_pts_[256] = {};      // projected pts for dim coastline
+    lv_obj_t* label_airspace_status_ = nullptr;
+    lv_obj_t* label_airspace_sub_    = nullptr;
+    lv_obj_t* label_airspace_range_  = nullptr;
+
+    // --- Radar screen widgets ---
+    lv_obj_t* radar_circle_     = nullptr;
+    lv_obj_t* radar_coastline_  = nullptr;   // lv_line, full coastline
+    lv_point_t radar_pts_[256]  = {};        // projected pts for coastline
+    lv_obj_t* label_radar_count_ = nullptr;  // "3 AIRCRAFT NEARBY" badge
+    lv_obj_t* label_radar_time_  = nullptr;
+    lv_obj_t* label_radar_date_  = nullptr;
+
+    RadarBlip   radar_blips_[Config::MAX_AIRCRAFT];
+    lv_obj_t*   list_container_    = nullptr;
+    lv_obj_t*   label_list_header_ = nullptr;
+    AircraftListRow list_rows_[Config::MAX_AIRCRAFT];
+    int         list_selected_idx_  = -1;
 
     // --- State ---
     ScreenState currentScreen;
-    bool homeHasAircraft;
     unsigned long lastScreenChange;
     unsigned long lastUserInteraction;
     String statusMessage;
@@ -117,26 +138,27 @@ private:
     // --- LVGL callbacks ---
     static void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
     static void touchpad_read(lv_indev_t* indev, lv_indev_data_t* data);
-    static void event_btn_view_planes(lv_event_t* e);
-    static void event_btn_back_home(lv_event_t* e);
 
     // --- Screen builders ---
     void build_home_screen();
-    void build_home_empty_screen();
-    void build_aircraft_screen();
-    void build_no_aircraft_screen();  // backward-compat: calls build_home_empty_screen()
+    void buildAirspacePanel(lv_obj_t* parent);
+    void build_radar_screen();
 
     // --- Section builders ---
     void buildTopBar(lv_obj_t* screen, WeatherWidgets& w);
     void buildStatusBar(lv_obj_t* screen, WeatherWidgets& w);
     void buildWeatherPanel(lv_obj_t* parent, WeatherWidgets& w);
-    void buildRadarPanel(lv_obj_t* parent);
 
-    // --- Update functions ---
+    // --- Update functions (keep existing updateWeatherWidgets and update_clock) ---
     void updateWeatherWidgets(WeatherWidgets& w, const WeatherData& weather, int aircraftCount);
-    void update_home_screen(const WeatherData& weather, const Aircraft* aircraft, int aircraftCount);
-    void update_aircraft_screen(const Aircraft& aircraft);
+    void update_home_screen(const WeatherData& weather, int aircraftCount);
+    void update_radar_screen(const Aircraft* aircraft, int aircraftCount);
     void update_clock(WeatherWidgets& w);
+
+    // --- Event handlers ---
+    void onListRowClicked(int idx);
+    static void event_list_row_clicked(lv_event_t* e);
+    static void event_topbar_back(lv_event_t* e);
 
     // --- Utilities ---
     String formatTime(time_t timestamp);
