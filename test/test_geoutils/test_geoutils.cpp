@@ -74,6 +74,26 @@ void test_blip_clamped_at_max_range() {
     TEST_ASSERT_EQUAL(pos1.y, pos2.y);
 }
 
+void test_latlon_to_radar_center() {
+    // A point at exactly home position maps to circle center (190, 190)
+    auto pos = GeoUtils::latLonToRadarPx(43.661f, -70.255f,
+                                          43.661f, -70.255f,
+                                          25.0f, 190);
+    TEST_ASSERT_INT_WITHIN(2, 190, pos.x);
+    TEST_ASSERT_INT_WITHIN(2, 190, pos.y);
+}
+
+void test_latlon_to_radar_north() {
+    // A point due north at half range (12.5nm) lands at (190, 95)
+    // bearing=0, dist=12.5, scale=0.5, r=0.5*190=95, x=190+0=190, y=190-95=95
+    float northLat = 43.661f + (12.5f / 60.0f);  // approx 12.5nm north
+    auto pos = GeoUtils::latLonToRadarPx(northLat, -70.255f,
+                                          43.661f, -70.255f,
+                                          25.0f, 190);
+    TEST_ASSERT_INT_WITHIN(4, 190, pos.x);
+    TEST_ASSERT_INT_WITHIN(4, 95,  pos.y);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_distance_portland_to_boston);
@@ -88,5 +108,7 @@ int main() {
     RUN_TEST(test_blip_north_max_range);
     RUN_TEST(test_blip_east_half_range);
     RUN_TEST(test_blip_clamped_at_max_range);
+    RUN_TEST(test_latlon_to_radar_center);
+    RUN_TEST(test_latlon_to_radar_north);
     return UNITY_END();
 }

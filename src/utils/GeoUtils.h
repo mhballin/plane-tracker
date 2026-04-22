@@ -56,4 +56,15 @@ inline BlipPos blipPosition(float distNm, float bearingDegVal,
     };
 }
 
+/// Project a geographic lat/lon point onto the radar circle.
+/// Equivalent to distanceNm + bearingDeg + blipPosition with zero margin.
+/// Use for rendering coastline points and fixed markers.
+inline BlipPos latLonToRadarPx(float ptLat, float ptLon,
+                                float centerLat, float centerLon,
+                                float maxRangeNm, int16_t circleRadius) {
+    float dist = distanceNm(centerLat, centerLon, ptLat, ptLon);
+    float bear = bearingDeg(centerLat, centerLon, ptLat, ptLon);
+    return blipPosition(dist, bear, maxRangeNm, circleRadius, 0);
+}
+
 } // namespace GeoUtils
