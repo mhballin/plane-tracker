@@ -749,14 +749,17 @@ void LVGLDisplayManager::setScreen(ScreenState screen) {
         lv_unlock();
         return;
     }
-    currentScreen = screen;
-    lastScreenChange = millis();
     switch (screen) {
         case SCREEN_HOME:
+            currentScreen = screen;
+            lastScreenChange = millis();
             if (screen_home) lv_screen_load_anim(screen_home, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
             break;
         case SCREEN_RADAR:
-            if (screen_radar) lv_screen_load_anim(screen_radar, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
+            if (!screen_radar) { lv_unlock(); return; }  // not built yet — stay on current screen
+            currentScreen = screen;
+            lastScreenChange = millis();
+            lv_screen_load_anim(screen_radar, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
             break;
     }
     lv_unlock();
@@ -818,6 +821,22 @@ void LVGLDisplayManager::setStatusMessage(const String& msg) {
     statusClearTime = millis() + Config::UI_STATUS_MS;
     if (homeWidgets.label_status_left) lv_label_set_text(homeWidgets.label_status_left, msg.c_str());
     lv_unlock();
+}
+
+// Event callbacks — registered in Task 6/8
+void LVGLDisplayManager::event_list_row_clicked(lv_event_t* e) {
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    if (s_instance) s_instance->onListRowClicked(idx);
+}
+
+void LVGLDisplayManager::onListRowClicked(int idx) {
+    // Implemented in Task 8 — expand/collapse list rows
+    (void)idx;
+}
+
+void LVGLDisplayManager::event_topbar_back(lv_event_t* e) {
+    (void)e;
+    if (s_instance) s_instance->userDismissed_ = true;
 }
 
 // Touch processing (LVGL handles this automatically)

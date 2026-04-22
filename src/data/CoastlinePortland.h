@@ -4,6 +4,7 @@
 // Approximate — suitable for visual context, not navigation.
 // To regenerate with higher fidelity, run tools/generate_coastline.py.
 #pragma once
+#include "utils/GeoUtils.h"
 
 namespace GeoUtils {
 
@@ -58,9 +59,5 @@ static const GeoPoint COASTLINE_PORTLAND[] = {
 
 static const int COASTLINE_PORTLAND_LEN =
     static_cast<int>(sizeof(COASTLINE_PORTLAND) / sizeof(COASTLINE_PORTLAND[0]));
-
-// PWM airport position (Portland International Jetport)
-constexpr float COASTLINE_PWM_LAT = 43.6462f;
-constexpr float COASTLINE_PWM_LON = -70.3093f;
 
 } // namespace GeoUtils
