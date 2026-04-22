@@ -87,8 +87,8 @@ void test_latlon_to_radar_north() {
     // A point due north at half range (12.5nm) lands at (190, 95)
     // bearing=0, dist=12.5, scale=0.5, r=0.5*190=95, x=190+0=190, y=190-95=95
     float northLat = 43.661f + (12.5f / 60.0f);  // approx 12.5nm north
-    auto pos = GeoUtils::latLonToRadarPx(northLat, -70.255f,
-                                          43.661f, -70.255f,
+    auto pos = GeoUtils::latLonToRadarPx(43.661f, -70.255f,
+                                          northLat, -70.255f,
                                           25.0f, 190);
     TEST_ASSERT_INT_WITHIN(4, 190, pos.x);
     TEST_ASSERT_INT_WITHIN(4, 95,  pos.y);
