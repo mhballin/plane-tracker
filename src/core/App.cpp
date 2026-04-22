@@ -132,15 +132,15 @@ void App::tick() {
             aircraftDismissed_ = false;
         }
 
-        // Auto-switch to aircraft detail when a plane enters range (unless user dismissed)
+        // Auto-switch to radar when a plane enters range (unless user dismissed)
         if (currentAircraftCount_ > 0 && !aircraftDismissed_
-                && display_->getCurrentScreen() != LVGLDisplayManager::SCREEN_AIRCRAFT_DETAIL) {
-            display_->setScreen(LVGLDisplayManager::SCREEN_AIRCRAFT_DETAIL);
+                && display_->getCurrentScreen() != LVGLDisplayManager::SCREEN_RADAR) {
+            display_->setScreen(LVGLDisplayManager::SCREEN_RADAR);
         }
 
         uint32_t changedAt = display_->getLastScreenChangeTime();
         if (changedAt != 0 && changedAt != lastRedrawnScreenChange_) {
-            if (display_->getCurrentScreen() == LVGLDisplayManager::SCREEN_AIRCRAFT_DETAIL) {
+            if (display_->getCurrentScreen() == LVGLDisplayManager::SCREEN_RADAR) {
                 routeFetchDone_ = false;
                 lastRouteFetchCallsign_ = "";
             }
@@ -164,7 +164,7 @@ void App::tick() {
         scheduler_.markRun(aircraftTaskId_, now);
     }
 
-    if (display_ && display_->getCurrentScreen() == LVGLDisplayManager::SCREEN_AIRCRAFT_DETAIL) {
+    if (display_ && display_->getCurrentScreen() == LVGLDisplayManager::SCREEN_RADAR) {
         if (currentAircraftCount_ > 1 && (now - lastPlaneSwitchMs_) >= Config::PLANE_DISPLAY_TIME) {
             currentAircraftIndex_ = (currentAircraftIndex_ + 1) % currentAircraftCount_;
             lastPlaneSwitchMs_ = now;
@@ -257,7 +257,7 @@ void App::updateDisplay() {
         return;
     }
 
-    if (screen == LVGLDisplayManager::SCREEN_AIRCRAFT_DETAIL) {
+    if (screen == LVGLDisplayManager::SCREEN_RADAR) {
         if (currentAircraftCount_ > 0
             && currentAircraftIndex_ < currentAircraftCount_
             && aircraftList_[currentAircraftIndex_].valid) {
@@ -294,7 +294,7 @@ void App::updateDisplay() {
 
             display_->update(currentWeather_, &cur, currentAircraftCount_);
         } else {
-            display_->setScreen(LVGLDisplayManager::SCREEN_NO_AIRCRAFT);
+            display_->setScreen(LVGLDisplayManager::SCREEN_HOME);
         }
         return;
     }
