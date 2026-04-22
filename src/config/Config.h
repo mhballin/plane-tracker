@@ -36,6 +36,10 @@ namespace Config {
     constexpr float HOME_LAT = HOME_LAT_MACRO;
     constexpr float HOME_LON = HOME_LON_MACRO;
 
+    // Portland International Jetport (PWM) — shown as reference on radar
+    constexpr float PWM_LAT = 43.6462f;
+    constexpr float PWM_LON = -70.3093f;
+
     // ========================================
     // AeroDataBox Route Lookup
     // ========================================
@@ -44,7 +48,8 @@ namespace Config {
     // ========================================
     // Radar Display
     // ========================================
-    constexpr float RADAR_MAX_RANGE_NM = 150.0f;
+    constexpr float RADAR_MAX_RANGE_NM = 25.0f;
+    constexpr int16_t RADAR_CIRCLE_RADIUS = 190;   // px, circle diameter = 380
 
     // ========================================
     // Tracking Settings
