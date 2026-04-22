@@ -5,6 +5,8 @@
 // To regenerate with higher fidelity, run tools/generate_coastline.py.
 #pragma once
 
+namespace GeoUtils {
+
 struct GeoPoint { float lat; float lon; };
 
 static const GeoPoint COASTLINE_PORTLAND[] = {
@@ -60,3 +62,5 @@ static const int COASTLINE_PORTLAND_LEN =
 // PWM airport position (Portland International Jetport)
 constexpr float COASTLINE_PWM_LAT = 43.6462f;
 constexpr float COASTLINE_PWM_LON = -70.3093f;
+
+} // namespace GeoUtils
