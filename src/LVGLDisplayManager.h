@@ -73,7 +73,7 @@ private:
         lv_obj_t*    dot    = nullptr;
         lv_obj_t*    vector = nullptr;  // lv_line, heading direction
         lv_obj_t*    label  = nullptr;  // callsign text
-        lv_point_t   vec_pts[2] = {};   // kept alive for lv_line
+        lv_point_precise_t   vec_pts[2] = {};   // kept alive for lv_line
     };
 
     // One row in the aircraft list panel
@@ -101,7 +101,7 @@ private:
     // Airspace status panel (on home screen)
     lv_obj_t* airspace_circle_    = nullptr;
     lv_obj_t* airspace_coastline_ = nullptr;
-    lv_point_t airspace_pts_[256] = {};      // projected pts for dim coastline
+    lv_point_precise_t airspace_pts_[256] = {};      // projected pts for dim coastline
     lv_obj_t* label_airspace_status_ = nullptr;
     lv_obj_t* label_airspace_sub_    = nullptr;
     lv_obj_t* label_airspace_range_  = nullptr;
@@ -109,7 +109,7 @@ private:
     // --- Radar screen widgets ---
     lv_obj_t* radar_circle_     = nullptr;
     lv_obj_t* radar_coastline_  = nullptr;   // lv_line, full coastline
-    lv_point_t radar_pts_[256]  = {};        // projected pts for coastline
+    lv_point_precise_t radar_pts_[256]  = {};        // projected pts for coastline
     lv_obj_t* label_radar_count_ = nullptr;  // "3 AIRCRAFT NEARBY" badge
     lv_obj_t* label_radar_time_  = nullptr;
     lv_obj_t* label_radar_date_  = nullptr;
