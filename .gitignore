@@ -25,3 +25,6 @@ src/config/credentials.h
 
 # Brainstorming mockups (superpowers visual companion)
 .superpowers/
+
+# Git worktrees
+.worktrees/
