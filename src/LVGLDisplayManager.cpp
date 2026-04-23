@@ -1101,13 +1101,189 @@ void LVGLDisplayManager::update_clock(WeatherWidgets& w) {
     }
 }
 
+void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
+                                               int aircraftCount) {
+    if (!label_radar_count_) return;
+
+    // Update top bar clock
+    {
+        struct tm ti;
+        if (getLocalTime(&ti)) {
+            char tb[12];
+            strftime(tb, sizeof(tb), "%H:%M", &ti);
+            lv_label_set_text(label_radar_time_, tb);
+            char db[20];
+            strftime(db, sizeof(db), "%a %d %b %Y", &ti);
+            lv_label_set_text(label_radar_date_, db);
+        }
+        char cb[32];
+        snprintf(cb, sizeof(cb), "\xe2\x97\x8f %d AIRCRAFT NEARBY", aircraftCount);
+        lv_label_set_text(label_radar_count_, cb);
+    }
+
+    // Update list header
+    {
+        char hb[40];
+        snprintf(hb, sizeof(hb), "AIRCRAFT IN RANGE  \xc2\xb7  %d", aircraftCount);
+        lv_label_set_text(label_list_header_, hb);
+    }
+
+    // If selected aircraft left range, reset selection to row 0 (or -1 if empty)
+    if (list_selected_idx_ >= aircraftCount) {
+        if (list_selected_idx_ >= 0 && list_selected_idx_ < Config::MAX_AIRCRAFT) {
+            lv_obj_add_flag(list_rows_[list_selected_idx_].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_height(list_rows_[list_selected_idx_].container, 66);
+        }
+        list_selected_idx_ = (aircraftCount > 0) ? 0 : -1;
+        if (list_selected_idx_ == 0) {
+            lv_obj_remove_flag(list_rows_[0].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_height(list_rows_[0].container, 138);
+        }
+    }
+
+    // Auto-expand row 0 on first entry (no prior selection)
+    if (aircraftCount > 0 && list_selected_idx_ < 0) {
+        list_selected_idx_ = 0;
+        lv_obj_remove_flag(list_rows_[0].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_height(list_rows_[0].container, 138);
+    }
+
+    for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
+        RadarBlip&       blip = radar_blips_[i];
+        AircraftListRow& row  = list_rows_[i];
+
+        if (!blip.dot || !row.container) continue;
+
+        if (aircraft && i < aircraftCount && aircraft[i].valid) {
+            const Aircraft& a = aircraft[i];
+
+            // --- Compute position ---
+            float distNm  = GeoUtils::distanceNm(Config::HOME_LAT, Config::HOME_LON,
+                                                   a.latitude, a.longitude);
+            float bearing = GeoUtils::bearingDeg(Config::HOME_LAT, Config::HOME_LON,
+                                                  a.latitude, a.longitude);
+            auto  pos     = GeoUtils::blipPosition(distNm, bearing,
+                                                    Config::RADAR_MAX_RANGE_NM,
+                                                    Config::RADAR_CIRCLE_RADIUS, 8);
+
+            float altFt   = a.altitude * 3.28084f;
+            lv_color_t blipColor = (altFt > 0.0f && altFt < 5000.0f)
+                                   ? COLOR_AMBER : COLOR_ACCENT;
+
+            // --- Radar blip ---
+            lv_obj_set_pos(blip.dot, pos.x - 6, pos.y - 6);
+            lv_obj_set_style_bg_color(blip.dot, blipColor, 0);
+            lv_obj_set_style_line_color(blip.vector, blipColor, 0);
+            lv_obj_set_style_text_color(blip.label, blipColor, 0);
+            lv_obj_remove_flag(blip.dot, LV_OBJ_FLAG_HIDDEN);
+
+            // Heading vector (20px)
+            float rad = a.heading * GeoUtils::DEG_TO_RAD;
+            blip.vec_pts[0] = {(lv_value_precise_t)pos.x, (lv_value_precise_t)pos.y};
+            blip.vec_pts[1] = {
+                (lv_value_precise_t)(pos.x + 20.0f * sinf(rad)),
+                (lv_value_precise_t)(pos.y - 20.0f * cosf(rad))
+            };
+            lv_line_set_points(blip.vector, blip.vec_pts, 2);
+            lv_obj_remove_flag(blip.vector, LV_OBJ_FLAG_HIDDEN);
+
+            // Callsign label
+            lv_label_set_text(blip.label, a.callsign.c_str());
+            lv_obj_set_pos(blip.label, pos.x + 10, pos.y - 8);
+            lv_obj_remove_flag(blip.label, LV_OBJ_FLAG_HIDDEN);
+
+            // Selection ring (shown on selected blip)
+            if (i == list_selected_idx_) {
+                lv_obj_set_style_border_color(blip.dot, COLOR_TEXT_PRIMARY, 0);
+                lv_obj_set_style_border_width(blip.dot, 2, 0);
+                lv_obj_set_style_border_opa(blip.dot, 160, 0);
+            } else {
+                lv_obj_set_style_border_width(blip.dot, 0, 0);
+            }
+
+            // --- List row ---
+            lv_obj_remove_flag(row.container, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_bg_color(row.accent_bar, blipColor, 0);
+            lv_obj_set_style_text_color(row.label_callsign, blipColor, 0);
+            lv_label_set_text(row.label_callsign, a.callsign.c_str());
+
+            // Type · route
+            char tr[64];
+            if (!a.aircraftType.isEmpty() && !a.origin.isEmpty() && !a.destination.isEmpty()) {
+                snprintf(tr, sizeof(tr), "%s  \xc2\xb7  %s \xe2\x86\x92 %s",
+                         a.aircraftType.c_str(), a.origin.c_str(), a.destination.c_str());
+            } else if (!a.origin.isEmpty() && !a.destination.isEmpty()) {
+                snprintf(tr, sizeof(tr), "%s \xe2\x86\x92 %s",
+                         a.origin.c_str(), a.destination.c_str());
+            } else if (!a.aircraftType.isEmpty()) {
+                snprintf(tr, sizeof(tr), "%s", a.aircraftType.c_str());
+            } else {
+                snprintf(tr, sizeof(tr), "Unknown type");
+            }
+            lv_label_set_text(row.label_type_route, tr);
+
+            // Summary line (collapsed)
+            char sm[80];
+            float speedKt = a.velocity * 1.94384f;
+            snprintf(sm, sizeof(sm), "%.0f ft  \xc2\xb7  %.0f kt  \xc2\xb7  %s  \xc2\xb7  %.1f nm",
+                     altFt, speedKt, GeoUtils::cardinalDir(bearing), distNm);
+            lv_label_set_text(row.label_summary, sm);
+
+            // Expanded fields
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.0f ft", altFt);
+            lv_label_set_text(row.label_alt, buf);
+
+            snprintf(buf, sizeof(buf), "%.0f kt", speedKt);
+            lv_label_set_text(row.label_speed, buf);
+
+            snprintf(buf, sizeof(buf), "%.0f\xc2\xb0 %s",
+                     a.heading, GeoUtils::cardinalDir(a.heading));
+            lv_label_set_text(row.label_hdg, buf);
+
+            snprintf(buf, sizeof(buf), "%.1f nm %s",
+                     distNm, GeoUtils::cardinalDir(bearing));
+            lv_label_set_text(row.label_dist, buf);
+
+            // STATUS field
+            float distToPwmNm = GeoUtils::distanceNm(Config::PWM_LAT, Config::PWM_LON,
+                                                       a.latitude, a.longitude);
+            float bearingToPwm = GeoUtils::bearingDeg(a.latitude, a.longitude,
+                                                       Config::PWM_LAT, Config::PWM_LON);
+            float hdgDiff = fabsf(fmodf(a.heading - bearingToPwm + 360.0f, 360.0f));
+            if (hdgDiff > 180.0f) hdgDiff = 360.0f - hdgDiff;
+
+            const char* statusTxt;
+            if (altFt >= 5000.0f) {
+                statusTxt = "CRUISING";
+            } else if (distToPwmNm < 15.0f && hdgDiff < 30.0f) {
+                statusTxt = "ON APPROACH";
+            } else if (distToPwmNm < 15.0f) {
+                statusTxt = "DEPARTING";
+            } else {
+                statusTxt = "LOW / OVERFLYING";
+            }
+            lv_obj_set_style_text_color(row.label_status, blipColor, 0);
+            lv_label_set_text(row.label_status, statusTxt);
+
+        } else {
+            // Hide blip and row
+            lv_obj_add_flag(blip.dot,    LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(blip.vector, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(blip.label,  LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(row.container, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
 // Main update function
 void LVGLDisplayManager::update(const WeatherData& weather, const Aircraft* aircraft, int aircraftCount) {
     lv_lock();
     if (currentScreen == SCREEN_HOME) {
         update_home_screen(weather, aircraftCount);
+    } else if (currentScreen == SCREEN_RADAR) {
+        update_radar_screen(aircraft, aircraftCount);
     }
-    // SCREEN_RADAR handled in Task 9
     lv_unlock();
 }
 
