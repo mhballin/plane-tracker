@@ -23,21 +23,10 @@
    MEMORY SETTINGS
  *=========================*/
 
-/* Size of the memory available for `lv_malloc()` in bytes (>= 2kB) */
-#define LV_MEM_CUSTOM 0
-#if LV_MEM_CUSTOM == 0
-    /* Use heap_caps_malloc with SPIRAM for LVGL's internal allocations */
-    #define LV_MEM_SIZE (128U * 1024U)  /* 128KB - plenty for UI widgets */
-    #define LV_MEM_ADR 0     /* 0: unused */
-    #define LV_MEM_POOL_INCLUDE <stdlib.h>
-    #define LV_MEM_POOL_ALLOC   malloc
-#else
-    /* Use PSRAM for LVGL memory */
-    #define LV_MEM_CUSTOM_INCLUDE <esp_heap_caps.h>
-    #define LV_MEM_CUSTOM_ALLOC(size) heap_caps_malloc((size), MALLOC_CAP_SPIRAM)
-    #define LV_MEM_CUSTOM_FREE heap_caps_free
-    #define LV_MEM_CUSTOM_REALLOC(ptr, new_size) heap_caps_realloc(ptr, new_size, MALLOC_CAP_SPIRAM)
-#endif
+/* Use standard C malloc/realloc/free — no fixed pool.
+ * On ESP32-S3 with PSRAM, malloc() routes large allocations to PSRAM,
+ * giving effectively unlimited headroom for widget trees. */
+#define LV_USE_STDLIB_MALLOC LV_STDLIB_CLIB
 
 /* Number of the intermediate memory buffer used during rendering */
 #define LV_DRAW_BUF_STRIDE_ALIGN 1

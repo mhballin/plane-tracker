@@ -50,17 +50,29 @@ bool App::begin() {
         Serial.println("[ERROR] Failed to allocate display manager");
         return false;
     }
-    if (!display_->initialize()) {
-        Serial.println("[ERROR] Display initialization failed");
+    // Phase 1: hardware + LVGL task — must happen while internal SRAM is free
+    if (!display_->initHardware()) {
+        Serial.println("[ERROR] Display hardware init failed");
+        return false;
+    }
+
+    // WiFi runs after the LVGL task is created but before screens are built.
+    // This gives WiFi access to internal SRAM DMA buffers (not yet consumed by
+    // the widget tree), while the task stack is already safely allocated.
+    if (!wifiManager_.connect()) {
+        Serial.println("[WiFi] Initial connection failed; will retry in tick()");
+    }
+
+    // Phase 2: build screens — large widget objects go to PSRAM via stdlib malloc
+    if (!display_->buildScreens()) {
+        Serial.println("[ERROR] Display screen build failed");
         return false;
     }
 
     serial_ = SerialCommandHandler(display_);
 
-    display_->setStatusMessage("Connecting WiFi...");
-    if (!wifiManager_.connect()) {
+    if (!wifiManager_.isConnected()) {
         display_->setStatusMessage("WiFi failed - retrying...");
-        Serial.println("[WiFi] Initial connection failed; will retry in tick()");
     }
 
     openSkyService_ = new OpenSkyService();

@@ -175,29 +175,28 @@ LVGLDisplayManager::~LVGLDisplayManager() {
     s_instance = nullptr;
 }
 
-// Initialize LVGL and display
-bool LVGLDisplayManager::initialize() {
-    Serial.println("[LVGL] Initializing LVGL display manager...");
-    
-    // Create LovyanGFX display instance
+// Phase 1: hardware + LVGL core + FreeRTOS task.
+// Call this BEFORE WiFi init so the task stack is allocated while internal SRAM is
+// still available (WiFi DMA buffers also need internal SRAM).
+bool LVGLDisplayManager::initHardware() {
+    Serial.println("[LVGL] Initializing hardware...");
+
     lcd = new LGFX_Panel();
     if (!lcd) {
         Serial.println("[LVGL] Failed to allocate LGFX");
         return false;
     }
-    
     lcd->init();
     lcd->setRotation(hal::Elecrow5Inch::PANEL_ROTATION);
     lcd->setBrightness(currentBrightness);
     lcd->fillScreen(TFT_BLACK);
-    
-    // Initialize LVGL
+
     lv_init();
 
-    // 1-ms hardware tick — accurate regardless of main-loop blocking
+    // 1-ms hardware tick — lv_tick_inc is IRQ-safe, intentionally outside lv_lock
     {
         esp_timer_create_args_t args = {};
-        args.callback = [](void*) { lv_tick_inc(1); };  // lv_tick_inc is IRQ-safe; intentionally outside lv_lock
+        args.callback = [](void*) { lv_tick_inc(1); };
         args.name = "lvgl_tick";
         args.dispatch_method = ESP_TIMER_TASK;
         esp_err_t err = esp_timer_create(&args, &lvgl_tick_timer_);
@@ -214,54 +213,57 @@ bool LVGLDisplayManager::initialize() {
         }
     }
 
-    // Create display buffers
-    static lv_color_t* buf1 = (lv_color_t*)heap_caps_malloc(LVGL_BUFFER_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    static lv_color_t* buf2 = (lv_color_t*)heap_caps_malloc(LVGL_BUFFER_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    
+    // DMA-capable draw buffers must be in internal SRAM
+    static lv_color_t* buf1 = (lv_color_t*)heap_caps_malloc(
+        LVGL_BUFFER_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    static lv_color_t* buf2 = (lv_color_t*)heap_caps_malloc(
+        LVGL_BUFFER_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     if (!buf1 || !buf2) {
         Serial.println("[LVGL] Failed to allocate display buffers");
         return false;
     }
-    
-    // Create LVGL display
+
     lv_display = lv_display_create(hal::Elecrow5Inch::PANEL_WIDTH, hal::Elecrow5Inch::PANEL_HEIGHT);
     lv_display_set_flush_cb(lv_display, flush_cb);
-    lv_display_set_buffers(lv_display, buf1, buf2, LVGL_BUFFER_SIZE * sizeof(lv_color_t), LV_DISPLAY_RENDER_MODE_PARTIAL);
-    
-    // Create input device (touch)
+    lv_display_set_buffers(lv_display, buf1, buf2,
+        LVGL_BUFFER_SIZE * sizeof(lv_color_t), LV_DISPLAY_RENDER_MODE_PARTIAL);
+
     lv_indev = lv_indev_create();
     lv_indev_set_type(lv_indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(lv_indev, touchpad_read);
-    lv_indev_set_disp(lv_indev, lv_display);   // LVGL 9: explicitly bind indev to display
-    lv_indev_set_scroll_limit(lv_indev, 20);   // 20px before tap becomes scroll (default 10 too sensitive)
-    
-    // Build screens
-    build_home_screen();
-    build_radar_screen();
+    lv_indev_set_disp(lv_indev, lv_display);
+    lv_indev_set_scroll_limit(lv_indev, 20);
 
-    // Load home screen at boot
-    lv_screen_load(screen_home);
-    currentScreen = SCREEN_HOME;
-    lastUserInteraction = millis();
-
-    // Start LVGL handler task now that display, indev, and screens are all registered
+    // Create the LVGL handler task now — internal SRAM is still plentiful here
+    // (WiFi hasn't run yet).  Stack and TCB both require internal SRAM on this port.
+    static constexpr uint32_t kLvglStackBytes = 16384;
     BaseType_t rc = xTaskCreatePinnedToCore(
-        lvgl_task,
-        "lvgl",
-        8192,
-        nullptr,
-        2,
-        &lvgl_task_handle_,
-        1
-    );
+        lvgl_task, "lvgl", kLvglStackBytes, nullptr, 2, &lvgl_task_handle_, 0);
     if (rc != pdPASS) {
         Serial.println("[LVGL] Failed to create LVGL task");
         return false;
     }
-    Serial.println("[LVGL] FreeRTOS task + tick timer started");
-
-    Serial.println("[LVGL] Display initialized successfully");
+    Serial.println("[LVGL] Hardware + task ready");
     return true;
+}
+
+// Phase 2: build LVGL widget trees.
+// Call this AFTER WiFi init (large widget objects go to PSRAM via stdlib malloc).
+bool LVGLDisplayManager::buildScreens() {
+    lv_lock();
+    build_home_screen();
+    build_radar_screen();
+    lv_screen_load(screen_home);
+    currentScreen = SCREEN_HOME;
+    lastUserInteraction = millis();
+    lv_unlock();
+    Serial.println("[LVGL] Screens built");
+    return true;
+}
+
+// Combined convenience wrapper (used by tests or simple callers)
+bool LVGLDisplayManager::initialize() {
+    return initHardware() && buildScreens();
 }
 
 // Flush callback for LovyanGFX
@@ -296,7 +298,7 @@ void LVGLDisplayManager::touchpad_read(lv_indev_t* indev, lv_indev_data_t* data)
     }
 }
 
-// LVGL handler task — runs independently of main loop
+// LVGL handler task — runs independently of main loop on core 0
 void LVGLDisplayManager::lvgl_task(void* /*arg*/) {
     while (true) {
         lv_lock();
@@ -982,51 +984,8 @@ void LVGLDisplayManager::build_radar_screen() {
         lv_label_set_text(row.label_summary, "");
         lv_obj_set_pos(row.label_summary, 14, 48);
 
-        // Expanded panel (hidden when collapsed)
-        row.expanded_panel = lv_obj_create(row.container);
-        lv_obj_set_size(row.expanded_panel, 306, 72);
-        lv_obj_set_pos(row.expanded_panel, 0, 66);
-        lv_obj_set_style_bg_color(row.expanded_panel, lv_color_hex(0x0a1428), 0);
-        lv_obj_set_style_bg_opa(row.expanded_panel, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(row.expanded_panel, 0, 0);
-        lv_obj_set_style_radius(row.expanded_panel, 0, 0);
-        lv_obj_set_style_pad_hor(row.expanded_panel, 14, 0);
-        lv_obj_set_style_pad_ver(row.expanded_panel, 6, 0);
-        lv_obj_clear_flag(row.expanded_panel,
-                          (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
-        lv_obj_add_flag(row.expanded_panel, LV_OBJ_FLAG_HIDDEN);
-
-        // Expanded field labels: row 1 (alt / speed / hdg)
-        row.label_alt = lv_label_create(row.expanded_panel);
-        lv_obj_set_style_text_font(row.label_alt, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(row.label_alt, COLOR_TEXT_PRIMARY, 0);
-        lv_label_set_text(row.label_alt, "--,--- ft");
-        lv_obj_set_pos(row.label_alt, 0, 4);
-
-        row.label_speed = lv_label_create(row.expanded_panel);
-        lv_obj_set_style_text_font(row.label_speed, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(row.label_speed, COLOR_TEXT_PRIMARY, 0);
-        lv_label_set_text(row.label_speed, "--- kt");
-        lv_obj_set_pos(row.label_speed, 100, 4);
-
-        row.label_hdg = lv_label_create(row.expanded_panel);
-        lv_obj_set_style_text_font(row.label_hdg, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(row.label_hdg, COLOR_TEXT_PRIMARY, 0);
-        lv_label_set_text(row.label_hdg, "---\xc2\xb0");
-        lv_obj_set_pos(row.label_hdg, 195, 4);
-
-        // Expanded field labels: row 2 (dist / status)
-        row.label_dist = lv_label_create(row.expanded_panel);
-        lv_obj_set_style_text_font(row.label_dist, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(row.label_dist, COLOR_TEXT_PRIMARY, 0);
-        lv_label_set_text(row.label_dist, "-.- nm");
-        lv_obj_set_pos(row.label_dist, 0, 34);
-
-        row.label_status = lv_label_create(row.expanded_panel);
-        lv_obj_set_style_text_font(row.label_status, &lv_font_montserrat_12, 0);
-        lv_obj_set_style_text_color(row.label_status, COLOR_TEXT_DIM, 0);
-        lv_label_set_text(row.label_status, "");
-        lv_obj_set_pos(row.label_status, 100, 36);
+        // Expanded panel intentionally not pre-allocated — too many style objects
+        // for the LVGL pool across MAX_AIRCRAFT rows. All key data shown in label_summary.
     }
 
     // === STATUS BAR (26px, bottom) ===
@@ -1131,21 +1090,22 @@ void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
     // If selected aircraft left range, reset selection to row 0 (or -1 if empty)
     if (list_selected_idx_ >= aircraftCount) {
         if (list_selected_idx_ >= 0 && list_selected_idx_ < Config::MAX_AIRCRAFT) {
-            lv_obj_add_flag(list_rows_[list_selected_idx_].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+            if (list_rows_[list_selected_idx_].expanded_panel)
+                lv_obj_add_flag(list_rows_[list_selected_idx_].expanded_panel, LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_height(list_rows_[list_selected_idx_].container, 66);
         }
         list_selected_idx_ = (aircraftCount > 0) ? 0 : -1;
         if (list_selected_idx_ == 0) {
-            lv_obj_remove_flag(list_rows_[0].expanded_panel, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_height(list_rows_[0].container, 138);
+            if (list_rows_[0].expanded_panel)
+                lv_obj_remove_flag(list_rows_[0].expanded_panel, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
     // Auto-expand row 0 on first entry (no prior selection)
     if (aircraftCount > 0 && list_selected_idx_ < 0) {
         list_selected_idx_ = 0;
-        lv_obj_remove_flag(list_rows_[0].expanded_panel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_height(list_rows_[0].container, 138);
+        if (list_rows_[0].expanded_panel)
+            lv_obj_remove_flag(list_rows_[0].expanded_panel, LV_OBJ_FLAG_HIDDEN);
     }
 
     for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
@@ -1229,42 +1189,43 @@ void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
                      altFt, speedKt, GeoUtils::cardinalDir(bearing), distNm);
             lv_label_set_text(row.label_summary, sm);
 
-            // Expanded fields
-            char buf[32];
-            snprintf(buf, sizeof(buf), "%.0f ft", altFt);
-            lv_label_set_text(row.label_alt, buf);
+            // Expanded fields (only if pre-allocated)
+            if (row.label_alt) {
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%.0f ft", altFt);
+                lv_label_set_text(row.label_alt, buf);
 
-            snprintf(buf, sizeof(buf), "%.0f kt", speedKt);
-            lv_label_set_text(row.label_speed, buf);
+                snprintf(buf, sizeof(buf), "%.0f kt", speedKt);
+                lv_label_set_text(row.label_speed, buf);
 
-            snprintf(buf, sizeof(buf), "%.0f\xc2\xb0 %s",
-                     a.heading, GeoUtils::cardinalDir(a.heading));
-            lv_label_set_text(row.label_hdg, buf);
+                snprintf(buf, sizeof(buf), "%.0f\xc2\xb0 %s",
+                         a.heading, GeoUtils::cardinalDir(a.heading));
+                lv_label_set_text(row.label_hdg, buf);
 
-            snprintf(buf, sizeof(buf), "%.1f nm %s",
-                     distNm, GeoUtils::cardinalDir(bearing));
-            lv_label_set_text(row.label_dist, buf);
+                snprintf(buf, sizeof(buf), "%.1f nm %s",
+                         distNm, GeoUtils::cardinalDir(bearing));
+                lv_label_set_text(row.label_dist, buf);
 
-            // STATUS field
-            float distToPwmNm = GeoUtils::distanceNm(Config::PWM_LAT, Config::PWM_LON,
-                                                       a.latitude, a.longitude);
-            float bearingToPwm = GeoUtils::bearingDeg(a.latitude, a.longitude,
-                                                       Config::PWM_LAT, Config::PWM_LON);
-            float hdgDiff = fabsf(fmodf(a.heading - bearingToPwm + 360.0f, 360.0f));
-            if (hdgDiff > 180.0f) hdgDiff = 360.0f - hdgDiff;
+                float distToPwmNm = GeoUtils::distanceNm(Config::PWM_LAT, Config::PWM_LON,
+                                                           a.latitude, a.longitude);
+                float bearingToPwm = GeoUtils::bearingDeg(a.latitude, a.longitude,
+                                                           Config::PWM_LAT, Config::PWM_LON);
+                float hdgDiff = fabsf(fmodf(a.heading - bearingToPwm + 360.0f, 360.0f));
+                if (hdgDiff > 180.0f) hdgDiff = 360.0f - hdgDiff;
 
-            const char* statusTxt;
-            if (altFt >= 5000.0f) {
-                statusTxt = "CRUISING";
-            } else if (distToPwmNm < 15.0f && hdgDiff < 30.0f) {
-                statusTxt = "ON APPROACH";
-            } else if (distToPwmNm < 15.0f) {
-                statusTxt = "DEPARTING";
-            } else {
-                statusTxt = "LOW / OVERFLYING";
+                const char* statusTxt;
+                if (altFt >= 5000.0f) {
+                    statusTxt = "CRUISING";
+                } else if (distToPwmNm < 15.0f && hdgDiff < 30.0f) {
+                    statusTxt = "ON APPROACH";
+                } else if (distToPwmNm < 15.0f) {
+                    statusTxt = "DEPARTING";
+                } else {
+                    statusTxt = "LOW / OVERFLYING";
+                }
+                lv_obj_set_style_text_color(row.label_status, blipColor, 0);
+                lv_label_set_text(row.label_status, statusTxt);
             }
-            lv_obj_set_style_text_color(row.label_status, blipColor, 0);
-            lv_label_set_text(row.label_status, statusTxt);
 
         } else {
             // Hide blip and row
@@ -1383,7 +1344,8 @@ void LVGLDisplayManager::onListRowClicked(int idx) {
 
     if (list_selected_idx_ == idx) {
         // Tap currently selected row → collapse
-        lv_obj_add_flag(list_rows_[idx].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+        if (list_rows_[idx].expanded_panel)
+            lv_obj_add_flag(list_rows_[idx].expanded_panel, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_height(list_rows_[idx].container, 66);
         list_selected_idx_ = -1;
         if (radar_blips_[idx].dot)
@@ -1394,15 +1356,17 @@ void LVGLDisplayManager::onListRowClicked(int idx) {
     // Collapse previously selected
     if (list_selected_idx_ >= 0 && list_selected_idx_ < Config::MAX_AIRCRAFT) {
         int prev = list_selected_idx_;
-        lv_obj_add_flag(list_rows_[prev].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+        if (list_rows_[prev].expanded_panel)
+            lv_obj_add_flag(list_rows_[prev].expanded_panel, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_height(list_rows_[prev].container, 66);
         if (radar_blips_[prev].dot)
             lv_obj_set_style_border_width(radar_blips_[prev].dot, 0, 0);
     }
 
     // Expand new row
-    lv_obj_remove_flag(list_rows_[idx].expanded_panel, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_height(list_rows_[idx].container, 138);  // 66 header + 72 expanded
+    if (list_rows_[idx].expanded_panel)
+        lv_obj_remove_flag(list_rows_[idx].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_height(list_rows_[idx].container, 66);  // no expanded panel, keep height
     list_selected_idx_ = idx;
 
     // Highlight corresponding radar blip

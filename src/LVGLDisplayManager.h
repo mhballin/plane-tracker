@@ -17,7 +17,9 @@ public:
     LVGLDisplayManager();
     ~LVGLDisplayManager();
 
-    bool initialize();
+    bool initialize();    // combined: initHardware() + buildScreens()
+    bool initHardware();  // phase 1: LCD, LVGL, task (call BEFORE WiFi)
+    bool buildScreens();  // phase 2: home + radar screens (call AFTER WiFi)
     void update(const WeatherData& weather, const Aircraft* aircraft, int aircraftCount);
     void tick(uint32_t period_ms = 5);
     void setBrightness(uint8_t brightness);
@@ -130,7 +132,7 @@ private:
     bool userDismissed_;
 
     // --- LVGL task / tick timer ---
-    esp_timer_handle_t lvgl_tick_timer_ = nullptr;
+    esp_timer_handle_t lvgl_tick_timer_  = nullptr;
     TaskHandle_t       lvgl_task_handle_ = nullptr;
     static void        lvgl_task(void* arg);
 
