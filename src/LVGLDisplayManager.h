@@ -32,7 +32,6 @@ public:
     void setScreen(ScreenState screen);
     ScreenState getCurrentScreen() const { return currentScreen; }
 
-    lgfx::LGFX_Device* getDisplay();
     lgfx::LGFX_Device* getLCD();
     unsigned long getLastScreenChangeTime() const { return lastScreenChange; }
     bool shouldReturnToHome();
@@ -163,5 +162,4 @@ private:
     // --- Utilities ---
     String formatTime(time_t timestamp);
     String formatDate(time_t timestamp);
-    const char* getWeatherIcon(const String& condition);
 };

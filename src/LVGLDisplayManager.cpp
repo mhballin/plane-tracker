@@ -1423,11 +1423,6 @@ void LVGLDisplayManager::processTouch() {
     // LVGL handles touch automatically via touchpad_read callback
 }
 
-// Accessors
-lgfx::LGFX_Device* LVGLDisplayManager::getDisplay() {
-    return lcd;
-}
-
 lgfx::LGFX_Device* LVGLDisplayManager::getLCD() {
     return lcd;
 }
