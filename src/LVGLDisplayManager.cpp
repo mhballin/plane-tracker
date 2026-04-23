@@ -857,6 +857,43 @@ void LVGLDisplayManager::build_radar_screen() {
     lv_label_set_text(rl2, "25nm");
     lv_obj_set_pos(rl2, 263, 15);
 
+    // Pre-allocate aircraft blip objects (all hidden at startup)
+    for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
+        RadarBlip& b = radar_blips_[i];
+
+        // Dot (12px filled circle)
+        b.dot = lv_obj_create(radar_circle_);
+        lv_obj_set_size(b.dot, 12, 12);
+        lv_obj_set_style_radius(b.dot, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(b.dot, COLOR_ACCENT, 0);
+        lv_obj_set_style_border_width(b.dot, 0, 0);
+        lv_obj_set_style_pad_all(b.dot, 0, 0);
+        lv_obj_set_pos(b.dot, Config::RADAR_CIRCLE_RADIUS - 6,
+                               Config::RADAR_CIRCLE_RADIUS - 6);
+        lv_obj_add_flag(b.dot, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(b.dot, LV_OBJ_FLAG_CLICKABLE);
+
+        // Heading vector (lv_line, 2 points)
+        b.vec_pts[0] = {(lv_value_precise_t)Config::RADAR_CIRCLE_RADIUS,
+                        (lv_value_precise_t)Config::RADAR_CIRCLE_RADIUS};
+        b.vec_pts[1] = {(lv_value_precise_t)Config::RADAR_CIRCLE_RADIUS,
+                        (lv_value_precise_t)(Config::RADAR_CIRCLE_RADIUS - 20)};
+        b.vector = lv_line_create(radar_circle_);
+        lv_line_set_points(b.vector, b.vec_pts, 2);
+        lv_obj_set_style_line_color(b.vector, COLOR_ACCENT, 0);
+        lv_obj_set_style_line_width(b.vector, 2, 0);
+        lv_obj_add_flag(b.vector, LV_OBJ_FLAG_HIDDEN);
+
+        // Callsign label
+        b.label = lv_label_create(radar_circle_);
+        lv_obj_set_style_text_font(b.label, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(b.label, COLOR_ACCENT, 0);
+        lv_label_set_text(b.label, "");
+        lv_obj_set_pos(b.label, Config::RADAR_CIRCLE_RADIUS,
+                                 Config::RADAR_CIRCLE_RADIUS);
+        lv_obj_add_flag(b.label, LV_OBJ_FLAG_HIDDEN);
+    }
+
     // === STATUS BAR (26px, bottom) ===
     lv_obj_t* sbar = lv_obj_create(screen_radar);
     lv_obj_set_size(sbar, hal::Elecrow5Inch::PANEL_WIDTH, 26);
