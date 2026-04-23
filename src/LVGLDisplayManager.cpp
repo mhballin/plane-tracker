@@ -690,6 +690,7 @@ void LVGLDisplayManager::buildAirspacePanel(lv_obj_t* parent) {
 }
 
 void LVGLDisplayManager::build_radar_screen() {
+    if (screen_radar) return;  // already built — prevent leak on re-init
     screen_radar = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen_radar, COLOR_BG, 0);
     lv_obj_set_style_bg_opa(screen_radar, LV_OPA_COVER, 0);
@@ -811,6 +812,7 @@ void LVGLDisplayManager::build_radar_screen() {
         Config::HOME_LAT, Config::HOME_LON,
         Config::PWM_LAT, Config::PWM_LON,
         Config::RADAR_MAX_RANGE_NM, Config::RADAR_CIRCLE_RADIUS);
+    // static: must outlive the lv_line objects that reference them
     static lv_point_precise_t pwm_h[2], pwm_v[2];
     pwm_h[0] = {(lv_value_precise_t)(pwm.x - 7), (lv_value_precise_t)pwm.y};
     pwm_h[1] = {(lv_value_precise_t)(pwm.x + 7), (lv_value_precise_t)pwm.y};
