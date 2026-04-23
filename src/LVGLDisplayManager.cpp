@@ -894,6 +894,141 @@ void LVGLDisplayManager::build_radar_screen() {
         lv_obj_add_flag(b.label, LV_OBJ_FLAG_HIDDEN);
     }
 
+    // Right panel: aircraft list (310px)
+    lv_obj_t* list_col = lv_obj_create(body);
+    lv_obj_set_size(list_col, 310, 396);
+    lv_obj_set_style_bg_color(list_col, COLOR_PANEL, 0);
+    lv_obj_set_style_bg_opa(list_col, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_side(list_col, LV_BORDER_SIDE_LEFT, 0);
+    lv_obj_set_style_border_color(list_col, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(list_col, 1, 0);
+    lv_obj_set_style_radius(list_col, 0, 0);
+    lv_obj_set_style_pad_all(list_col, 0, 0);
+    lv_obj_clear_flag(list_col, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Header label
+    label_list_header_ = lv_label_create(list_col);
+    lv_obj_set_style_text_font(label_list_header_, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(label_list_header_, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(label_list_header_, "AIRCRAFT IN RANGE  \xc2\xb7  0");
+    lv_obj_set_pos(label_list_header_, 12, 8);
+
+    // Thin divider line
+    lv_obj_t* ldiv = lv_obj_create(list_col);
+    lv_obj_set_size(ldiv, 286, 1);
+    lv_obj_set_pos(ldiv, 12, 26);
+    lv_obj_set_style_bg_color(ldiv, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(ldiv, 0, 0);
+    lv_obj_clear_flag(ldiv, LV_OBJ_FLAG_CLICKABLE);
+
+    // Scrollable list container
+    list_container_ = lv_obj_create(list_col);
+    lv_obj_set_size(list_container_, 310, 362);
+    lv_obj_set_pos(list_container_, 0, 30);
+    lv_obj_set_style_bg_opa(list_container_, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list_container_, 0, 0);
+    lv_obj_set_style_pad_all(list_container_, 0, 0);
+    lv_obj_set_style_radius(list_container_, 0, 0);
+    lv_obj_set_layout(list_container_, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(list_container_, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(list_container_, LV_FLEX_ALIGN_START,
+                           LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_row(list_container_, 0, 0);
+
+    // Pre-allocate rows
+    for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
+        AircraftListRow& row = list_rows_[i];
+
+        row.container = lv_obj_create(list_container_);
+        lv_obj_set_width(row.container, 310);
+        lv_obj_set_height(row.container, 66);
+        lv_obj_set_style_bg_color(row.container, COLOR_PANEL, 0);
+        lv_obj_set_style_bg_opa(row.container, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_side(row.container, LV_BORDER_SIDE_BOTTOM, 0);
+        lv_obj_set_style_border_color(row.container, COLOR_BORDER, 0);
+        lv_obj_set_style_border_width(row.container, 1, 0);
+        lv_obj_set_style_radius(row.container, 0, 0);
+        lv_obj_set_style_pad_all(row.container, 0, 0);
+        lv_obj_clear_flag(row.container, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(row.container, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(row.container, event_list_row_clicked,
+                            LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        lv_obj_add_flag(row.container, LV_OBJ_FLAG_HIDDEN);
+
+        // Left accent bar (4px wide)
+        row.accent_bar = lv_obj_create(row.container);
+        lv_obj_set_size(row.accent_bar, 4, 66);
+        lv_obj_set_pos(row.accent_bar, 0, 0);
+        lv_obj_set_style_bg_color(row.accent_bar, COLOR_ACCENT, 0);
+        lv_obj_set_style_border_width(row.accent_bar, 0, 0);
+        lv_obj_set_style_radius(row.accent_bar, 0, 0);
+        lv_obj_clear_flag(row.accent_bar, LV_OBJ_FLAG_CLICKABLE);
+
+        row.label_callsign = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_callsign, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_color(row.label_callsign, COLOR_ACCENT, 0);
+        lv_label_set_text(row.label_callsign, "------");
+        lv_obj_set_pos(row.label_callsign, 14, 8);
+
+        row.label_type_route = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_type_route, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(row.label_type_route, COLOR_TEXT_SECONDARY, 0);
+        lv_label_set_text(row.label_type_route, "");
+        lv_obj_set_pos(row.label_type_route, 14, 30);
+
+        row.label_summary = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_summary, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(row.label_summary, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(row.label_summary, "");
+        lv_obj_set_pos(row.label_summary, 14, 48);
+
+        // Expanded panel (hidden when collapsed)
+        row.expanded_panel = lv_obj_create(row.container);
+        lv_obj_set_size(row.expanded_panel, 306, 72);
+        lv_obj_set_pos(row.expanded_panel, 0, 66);
+        lv_obj_set_style_bg_color(row.expanded_panel, lv_color_hex(0x0a1428), 0);
+        lv_obj_set_style_bg_opa(row.expanded_panel, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(row.expanded_panel, 0, 0);
+        lv_obj_set_style_radius(row.expanded_panel, 0, 0);
+        lv_obj_set_style_pad_hor(row.expanded_panel, 14, 0);
+        lv_obj_set_style_pad_ver(row.expanded_panel, 6, 0);
+        lv_obj_clear_flag(row.expanded_panel,
+                          (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
+        lv_obj_add_flag(row.expanded_panel, LV_OBJ_FLAG_HIDDEN);
+
+        // Expanded field labels: row 1 (alt / speed / hdg)
+        row.label_alt = lv_label_create(row.expanded_panel);
+        lv_obj_set_style_text_font(row.label_alt, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(row.label_alt, COLOR_TEXT_PRIMARY, 0);
+        lv_label_set_text(row.label_alt, "--,--- ft");
+        lv_obj_set_pos(row.label_alt, 0, 4);
+
+        row.label_speed = lv_label_create(row.expanded_panel);
+        lv_obj_set_style_text_font(row.label_speed, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(row.label_speed, COLOR_TEXT_PRIMARY, 0);
+        lv_label_set_text(row.label_speed, "--- kt");
+        lv_obj_set_pos(row.label_speed, 100, 4);
+
+        row.label_hdg = lv_label_create(row.expanded_panel);
+        lv_obj_set_style_text_font(row.label_hdg, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(row.label_hdg, COLOR_TEXT_PRIMARY, 0);
+        lv_label_set_text(row.label_hdg, "---\xc2\xb0");
+        lv_obj_set_pos(row.label_hdg, 195, 4);
+
+        // Expanded field labels: row 2 (dist / status)
+        row.label_dist = lv_label_create(row.expanded_panel);
+        lv_obj_set_style_text_font(row.label_dist, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(row.label_dist, COLOR_TEXT_PRIMARY, 0);
+        lv_label_set_text(row.label_dist, "-.- nm");
+        lv_obj_set_pos(row.label_dist, 0, 34);
+
+        row.label_status = lv_label_create(row.expanded_panel);
+        lv_obj_set_style_text_font(row.label_status, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(row.label_status, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(row.label_status, "");
+        lv_obj_set_pos(row.label_status, 100, 36);
+    }
+
     // === STATUS BAR (26px, bottom) ===
     lv_obj_t* sbar = lv_obj_create(screen_radar);
     lv_obj_set_size(sbar, hal::Elecrow5Inch::PANEL_WIDTH, 26);
@@ -1067,8 +1202,39 @@ void LVGLDisplayManager::event_list_row_clicked(lv_event_t* e) {
 }
 
 void LVGLDisplayManager::onListRowClicked(int idx) {
-    // Implemented in Task 8 — expand/collapse list rows
-    (void)idx;
+    if (idx < 0 || idx >= Config::MAX_AIRCRAFT) return;
+    if (!list_rows_[idx].container) return;
+
+    if (list_selected_idx_ == idx) {
+        // Tap currently selected row → collapse
+        lv_obj_add_flag(list_rows_[idx].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_height(list_rows_[idx].container, 66);
+        list_selected_idx_ = -1;
+        if (radar_blips_[idx].dot)
+            lv_obj_set_style_border_width(radar_blips_[idx].dot, 0, 0);
+        return;
+    }
+
+    // Collapse previously selected
+    if (list_selected_idx_ >= 0 && list_selected_idx_ < Config::MAX_AIRCRAFT) {
+        int prev = list_selected_idx_;
+        lv_obj_add_flag(list_rows_[prev].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_height(list_rows_[prev].container, 66);
+        if (radar_blips_[prev].dot)
+            lv_obj_set_style_border_width(radar_blips_[prev].dot, 0, 0);
+    }
+
+    // Expand new row
+    lv_obj_remove_flag(list_rows_[idx].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_height(list_rows_[idx].container, 138);  // 66 header + 72 expanded
+    list_selected_idx_ = idx;
+
+    // Highlight corresponding radar blip
+    if (radar_blips_[idx].dot) {
+        lv_obj_set_style_border_color(radar_blips_[idx].dot, COLOR_TEXT_PRIMARY, 0);
+        lv_obj_set_style_border_width(radar_blips_[idx].dot, 2, 0);
+        lv_obj_set_style_border_opa(radar_blips_[idx].dot, 160, 0);
+    }
 }
 
 void LVGLDisplayManager::event_topbar_back(lv_event_t* e) {
