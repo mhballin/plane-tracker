@@ -11,6 +11,9 @@ WiFiManager::WiFiManager()
 
 bool WiFiManager::connect() {
     Serial.printf("[WiFi] Connecting to SSID: \"%s\"\n", Config::WIFI_SSID);
+    WiFi.persistent(false);   // don't write credentials to NVS — avoids stale state across reflashes
+    WiFi.disconnect(true);    // clear any lingering NVS/driver state from previous firmware
+    delay(100);
     WiFi.mode(WIFI_STA);
     WiFi.begin(Config::WIFI_SSID, Config::WIFI_PASSWORD);
 

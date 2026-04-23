@@ -238,7 +238,7 @@ bool LVGLDisplayManager::initHardware() {
     // (WiFi hasn't run yet).  Stack and TCB both require internal SRAM on this port.
     static constexpr uint32_t kLvglStackBytes = 16384;
     BaseType_t rc = xTaskCreatePinnedToCore(
-        lvgl_task, "lvgl", kLvglStackBytes, nullptr, 2, &lvgl_task_handle_, 0);
+        lvgl_task, "lvgl", kLvglStackBytes, nullptr, 2, &lvgl_task_handle_, 1);
     if (rc != pdPASS) {
         Serial.println("[LVGL] Failed to create LVGL task");
         return false;
