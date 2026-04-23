@@ -292,7 +292,12 @@ int OpenSkyService::fetchAircraft(Aircraft* aircraftList, int maxAircraft) {
                         plane.heading       = state[10].isNull() ? 0.0f : state[10].as<float>();
                         plane.verticalRate  = state[11].isNull() ? 0.0f : state[11].as<float>();
                         plane.squawk        = state[14].isNull() ? "" : state[14].as<String>();
-                        plane.valid     = true;
+                        plane.valid          = true;
+                        plane.routeLookupDone    = false;
+                        plane.origin             = "";
+                        plane.destination        = "";
+                        plane.originDisplay      = "";
+                        plane.destinationDisplay = "";
                         plane.aircraftType = guessAircraftType(plane.callsign);
                         plane.airline      = guessAirline(plane.callsign);
                         if (plane.airline == "Private") continue;

@@ -11,6 +11,7 @@
 #undef RAD_TO_DEG
 #endif
 #include "utils/GeoUtils.h"
+#include "data/CoastlinePortland.h"
 #include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
 
@@ -141,26 +142,8 @@ LVGLDisplayManager::LVGLDisplayManager()
     , lv_display(nullptr)
     , lv_indev(nullptr)
     , screen_home(nullptr)
-    , screen_home_empty(nullptr)
-    , screen_aircraft(nullptr)
-    , radar_container(nullptr)
-    , label_contact_count(nullptr)
-    , btn_view_planes(nullptr)
-    , label_callsign(nullptr)
-    , label_distance(nullptr)
-    , label_airline(nullptr)
-    , label_aircraft_type(nullptr)
-    , label_squawk(nullptr)
-    , label_route_main(nullptr)
-    , label_route_sub(nullptr)
-    , label_altitude(nullptr)
-    , label_velocity(nullptr)
-    , label_heading(nullptr)
-    , label_vert_speed(nullptr)
-    , label_status_aircraft(nullptr)
-    , btn_back_home(nullptr)
+    , screen_radar(nullptr)
     , currentScreen(SCREEN_HOME)
-    , homeHasAircraft(false)
     , lastScreenChange(0)
     , lastUserInteraction(0)
     , statusMessage("")
@@ -168,10 +151,8 @@ LVGLDisplayManager::LVGLDisplayManager()
     , lastUpdateTime(0)
     , currentBrightness(255)
     , userDismissed_(false)
+    , list_selected_idx_(-1)
 {
-    for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
-        radar_blips[i] = nullptr;
-    }
     s_instance = this;
 }
 
@@ -256,13 +237,11 @@ bool LVGLDisplayManager::initialize() {
     
     // Build screens
     build_home_screen();
-    build_home_empty_screen();
-    build_aircraft_screen();
+    build_radar_screen();
 
-    // Load appropriate home screen (no aircraft at boot)
-    lv_screen_load(screen_home_empty);
+    // Load home screen at boot
+    lv_screen_load(screen_home);
     currentScreen = SCREEN_HOME;
-    homeHasAircraft = false;
     lastUserInteraction = millis();
 
     // Start LVGL handler task now that display, indev, and screens are all registered
@@ -612,7 +591,6 @@ void LVGLDisplayManager::build_home_screen() {
     buildTopBar(screen_home, homeWidgets);
     buildStatusBar(screen_home, homeWidgets);
 
-    // Body: 800 x 396px, between top bar (58) and status bar (26)
     lv_obj_t* body = lv_obj_create(screen_home);
     lv_obj_set_size(body, hal::Elecrow5Inch::PANEL_WIDTH, 396);
     lv_obj_set_pos(body, 0, 58);
@@ -625,19 +603,19 @@ void LVGLDisplayManager::build_home_screen() {
     lv_obj_set_flex_flow(body, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(body, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
-    // Weather panel (left, fills remaining space)
-    lv_obj_t* weather_col = lv_obj_create(body);
-    lv_obj_set_flex_grow(weather_col, 1);
-    lv_obj_set_height(weather_col, 396);
-    buildWeatherPanel(weather_col, homeWidgets);
+    // Left: weather panel (flex-fill)
+    lv_obj_t* wx_col = lv_obj_create(body);
+    lv_obj_set_flex_grow(wx_col, 1);
+    lv_obj_set_height(wx_col, 396);
+    buildWeatherPanel(wx_col, homeWidgets);
 
-    // Radar panel (right, fixed 310px)
-    lv_obj_t* radar_col = lv_obj_create(body);
-    lv_obj_set_size(radar_col, 310, 396);
-    buildRadarPanel(radar_col);
+    // Right: airspace status (310px)
+    lv_obj_t* ap_col = lv_obj_create(body);
+    lv_obj_set_size(ap_col, 310, 396);
+    buildAirspacePanel(ap_col);
 }
 
-void LVGLDisplayManager::buildRadarPanel(lv_obj_t* parent) {
+void LVGLDisplayManager::buildAirspacePanel(lv_obj_t* parent) {
     lv_obj_set_style_bg_color(parent, COLOR_PANEL, 0);
     lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
     lv_obj_set_style_border_side(parent, LV_BORDER_SIDE_LEFT, 0);
@@ -647,149 +625,115 @@ void LVGLDisplayManager::buildRadarPanel(lv_obj_t* parent) {
     lv_obj_set_style_pad_all(parent, 10, 0);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_set_layout(parent, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(parent, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(parent, 8, 0);
-    lv_obj_set_style_pad_column(parent, 8, 0);
-
-    // Section header
+    // Header
     lv_obj_t* hdr = lv_label_create(parent);
     lv_obj_set_style_text_font(hdr, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(hdr, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(hdr, "NEARBY PLANES");
+    lv_label_set_text(hdr, "LOCAL AIRSPACE");
+    lv_obj_set_pos(hdr, 10, 10);
 
-    // Radar circle (190x190)
-    radar_container = lv_obj_create(parent);
-    lv_obj_set_size(radar_container, 190, 190);
-    lv_obj_set_style_radius(radar_container, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(radar_container, COLOR_INSET, 0);
-    lv_obj_set_style_bg_opa(radar_container, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(radar_container, COLOR_BORDER_ACCENT, 0);
-    lv_obj_set_style_border_width(radar_container, 1, 0);
-    lv_obj_set_style_pad_all(radar_container, 0, 0);
-    lv_obj_clear_flag(radar_container, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
+    label_airspace_range_ = lv_label_create(parent);
+    lv_obj_set_style_text_font(label_airspace_range_, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(label_airspace_range_, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(label_airspace_range_, "25 nm radius");
+    lv_obj_set_pos(label_airspace_range_, 10, 28);
 
-    // Range rings at 33% and 66% of radius
-    const int ring_sizes[2] = { 64, 126 };
-    for (int i = 0; i < 2; i++) {
-        lv_obj_t* ring = lv_obj_create(radar_container);
-        lv_obj_set_size(ring, ring_sizes[i], ring_sizes[i]);
-        lv_obj_center(ring);
-        lv_obj_set_style_radius(ring, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_opa(ring, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(ring, lv_color_hex(0x1a3048), 0);
-        lv_obj_set_style_border_width(ring, 1, 0);
-        lv_obj_clear_flag(ring, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
+    // Dim radar circle (240px diameter, centered in 310px panel)
+    airspace_circle_ = lv_obj_create(parent);
+    lv_obj_set_size(airspace_circle_, 240, 240);
+    lv_obj_set_pos(airspace_circle_, 25, 48);
+    lv_obj_set_style_radius(airspace_circle_, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(airspace_circle_, COLOR_INSET, 0);
+    lv_obj_set_style_bg_opa(airspace_circle_, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(airspace_circle_, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(airspace_circle_, 1, 0);
+    lv_obj_set_style_pad_all(airspace_circle_, 0, 0);
+    lv_obj_set_style_clip_corner(airspace_circle_, true, 0);
+    lv_obj_clear_flag(airspace_circle_, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
+
+    // Home dot (center, dim)
+    lv_obj_t* home = lv_obj_create(airspace_circle_);
+    lv_obj_set_size(home, 6, 6);
+    lv_obj_center(home);
+    lv_obj_set_style_radius(home, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(home, COLOR_TEXT_DIM, 0);
+    lv_obj_set_style_border_width(home, 0, 0);
+    lv_obj_clear_flag(home, LV_OBJ_FLAG_CLICKABLE);
+
+    // Project coastline to pixel coords (120px radius for 240px circle)
+    for (int i = 0; i < GeoUtils::COASTLINE_PORTLAND_LEN; i++) {
+        auto p = GeoUtils::latLonToRadarPx(
+            Config::HOME_LAT, Config::HOME_LON,
+            GeoUtils::COASTLINE_PORTLAND[i].lat, GeoUtils::COASTLINE_PORTLAND[i].lon,
+            Config::RADAR_MAX_RANGE_NM, 120);
+        airspace_pts_[i] = {(lv_value_precise_t)p.x, (lv_value_precise_t)p.y};
     }
 
-    // Home dot (center, 8px cyan)
-    lv_obj_t* home_dot = lv_obj_create(radar_container);
-    lv_obj_set_size(home_dot, 8, 8);
-    lv_obj_center(home_dot);
-    lv_obj_set_style_radius(home_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(home_dot, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_width(home_dot, 0, 0);
-    lv_obj_clear_flag(home_dot, LV_OBJ_FLAG_CLICKABLE);
+    airspace_coastline_ = lv_line_create(airspace_circle_);
+    lv_line_set_points(airspace_coastline_, airspace_pts_, GeoUtils::COASTLINE_PORTLAND_LEN);
+    lv_obj_set_style_line_color(airspace_coastline_, lv_color_hex(0x1e3a54), 0);
+    lv_obj_set_style_line_width(airspace_coastline_, 2, 0);
+    lv_obj_set_style_line_opa(airspace_coastline_, LV_OPA_COVER, 0);
 
-    // Pre-create aircraft blips (all hidden)
-    for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
-        radar_blips[i] = lv_obj_create(radar_container);
-        lv_obj_set_size(radar_blips[i], 8, 8);
-        lv_obj_set_style_radius(radar_blips[i], LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_color(radar_blips[i], COLOR_ACCENT, 0);
-        lv_obj_set_style_border_width(radar_blips[i], 0, 0);
-        lv_obj_set_pos(radar_blips[i], 91, 91);
-        lv_obj_add_flag(radar_blips[i], LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(radar_blips[i], LV_OBJ_FLAG_CLICKABLE);
-    }
+    // Status labels below circle
+    label_airspace_status_ = lv_label_create(parent);
+    lv_obj_set_style_text_font(label_airspace_status_, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(label_airspace_status_, COLOR_SUCCESS, 0);
+    lv_label_set_text(label_airspace_status_, "\xe2\x97\x8f AIRSPACE CLEAR");
+    lv_obj_set_pos(label_airspace_status_, 10, 298);
 
-    // Contact count
-    label_contact_count = lv_label_create(parent);
-    lv_obj_set_style_text_font(label_contact_count, &lv_font_montserrat_26, 0);
-    lv_obj_set_style_text_color(label_contact_count, COLOR_ACCENT, 0);
-    lv_label_set_text(label_contact_count, "0");
-
-    lv_obj_t* lbl_units = lv_label_create(parent);
-    lv_obj_set_style_text_font(lbl_units, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_units, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(lbl_units, "PLANES");
-
-    // VIEW AIRCRAFT button
-    btn_view_planes = lv_button_create(parent);
-    lv_obj_set_size(btn_view_planes, 220, 36);
-    lv_obj_set_style_bg_color(btn_view_planes, COLOR_ACCENT, 0);
-    lv_obj_set_style_radius(btn_view_planes, 4, 0);
-
-    lv_obj_t* btn_lbl = lv_label_create(btn_view_planes);
-    lv_obj_set_style_text_font(btn_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(btn_lbl, COLOR_TEXT_ON_ACCENT, 0);
-    lv_label_set_text(btn_lbl, LV_SYMBOL_RIGHT "  VIEW AIRCRAFT");
-    lv_obj_center(btn_lbl);
-
-    // Tapping anywhere on panel navigates to aircraft list
-    lv_obj_add_event_cb(parent, event_btn_view_planes, LV_EVENT_CLICKED, this);
+    label_airspace_sub_ = lv_label_create(parent);
+    lv_obj_set_style_text_font(label_airspace_sub_, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(label_airspace_sub_, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(label_airspace_sub_, "No aircraft within 25nm");
+    lv_obj_set_pos(label_airspace_sub_, 10, 318);
 }
 
-void LVGLDisplayManager::update_home_screen(const WeatherData& weather,
-                                             const Aircraft* aircraft,
-                                             int aircraftCount) {
-    // Switch home screen variant if aircraft count changed
-    bool nowHas = (aircraftCount > 0);
-    if (nowHas != homeHasAircraft) {
-        homeHasAircraft = nowHas;
-        lv_screen_load(homeHasAircraft ? screen_home : screen_home_empty);
-    }
+void LVGLDisplayManager::build_radar_screen() {
+    if (screen_radar) return;  // already built — prevent leak on re-init
+    screen_radar = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen_radar, COLOR_BG, 0);
+    lv_obj_set_style_bg_opa(screen_radar, LV_OPA_COVER, 0);
 
-    // Update weather labels on whichever screen is active
-    WeatherWidgets& w = homeHasAircraft ? homeWidgets : emptyWidgets;
-    update_clock(w);
-    updateWeatherWidgets(w, weather, aircraftCount);
+    // === TOP BAR (58px) ===
+    lv_obj_t* topbar = lv_obj_create(screen_radar);
+    lv_obj_set_size(topbar, hal::Elecrow5Inch::PANEL_WIDTH, 58);
+    lv_obj_set_pos(topbar, 0, 0);
+    lv_obj_set_style_bg_color(topbar, COLOR_TOPBAR, 0);
+    lv_obj_set_style_border_side(topbar, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_color(topbar, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(topbar, 1, 0);
+    lv_obj_set_style_radius(topbar, 0, 0);
+    lv_obj_set_style_pad_all(topbar, 0, 0);
+    lv_obj_clear_flag(topbar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(topbar, event_topbar_back, LV_EVENT_CLICKED, this);
 
-    if (!homeHasAircraft) return;
+    label_radar_time_ = lv_label_create(topbar);
+    lv_obj_set_style_text_font(label_radar_time_, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(label_radar_time_, COLOR_ACCENT, 0);
+    lv_label_set_text(label_radar_time_, "--:--");
+    lv_obj_align(label_radar_time_, LV_ALIGN_LEFT_MID, 16, -6);
 
-    // Update radar panel
-    char count_buf[8];
-    snprintf(count_buf, sizeof(count_buf), "%d", aircraftCount);
-    lv_label_set_text(label_contact_count, count_buf);
+    label_radar_date_ = lv_label_create(topbar);
+    lv_obj_set_style_text_font(label_radar_date_, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(label_radar_date_, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(label_radar_date_, "--- -- ----");
+    lv_obj_align(label_radar_date_, LV_ALIGN_LEFT_MID, 16, 10);
 
-    for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
-        if (!radar_blips[i]) continue;
+    label_radar_count_ = lv_label_create(topbar);
+    lv_obj_set_style_text_font(label_radar_count_, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(label_radar_count_, COLOR_AMBER, 0);
+    lv_label_set_text(label_radar_count_, "\xe2\x97\x8f 0 AIRCRAFT NEARBY");
+    lv_obj_align(label_radar_count_, LV_ALIGN_CENTER, 0, 0);
 
-        if (aircraft && i < aircraftCount && aircraft[i].valid) {
-            const Aircraft& a = aircraft[i];
-            float distNm = GeoUtils::distanceNm(
-                Config::HOME_LAT, Config::HOME_LON,
-                a.latitude, a.longitude);
-            float bearing = GeoUtils::bearingDeg(
-                Config::HOME_LAT, Config::HOME_LON,
-                a.latitude, a.longitude);
+    lv_obj_t* hint = lv_label_create(topbar);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(hint, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(hint, "tap bar \xe2\x86\x90 home");
+    lv_obj_align(hint, LV_ALIGN_RIGHT_MID, -16, 0);
 
-            auto pos = GeoUtils::blipPosition(distNm, bearing,
-                                               Config::RADAR_MAX_RANGE_NM, 95, 6);
-            lv_obj_set_pos(radar_blips[i], pos.x - 4, pos.y - 4);
-
-            // Amber for low altitude (<5000 ft), cyan otherwise
-            float altFt = a.altitude * 3.28084f;
-            lv_color_t blipColor = (altFt > 0 && altFt < 5000.0f) ? COLOR_AMBER : COLOR_ACCENT;
-            lv_obj_set_style_bg_color(radar_blips[i], blipColor, 0);
-            lv_obj_remove_flag(radar_blips[i], LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(radar_blips[i], LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-}
-
-void LVGLDisplayManager::build_home_empty_screen() {
-    screen_home_empty = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen_home_empty, COLOR_BG, 0);
-    lv_obj_set_style_bg_opa(screen_home_empty, LV_OPA_COVER, 0);
-
-    buildTopBar(screen_home_empty, emptyWidgets);
-    buildStatusBar(screen_home_empty, emptyWidgets);
-
-    // Body: full 800px width, two-column layout
-    lv_obj_t* body = lv_obj_create(screen_home_empty);
+    // === BODY ===
+    lv_obj_t* body = lv_obj_create(screen_radar);
     lv_obj_set_size(body, hal::Elecrow5Inch::PANEL_WIDTH, 396);
     lv_obj_set_pos(body, 0, 58);
     lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);
@@ -799,218 +743,294 @@ void LVGLDisplayManager::build_home_empty_screen() {
     lv_obj_clear_flag(body, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_layout(body, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(body, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(body, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
-    // Left column: current conditions (340px)
-    lv_obj_t* left_col = lv_obj_create(body);
-    lv_obj_set_size(left_col, 340, 396);
-    lv_obj_set_style_bg_opa(left_col, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(left_col, 0, 0);
-    lv_obj_set_style_pad_hor(left_col, 20, 0);
-    lv_obj_set_style_pad_ver(left_col, 20, 0);
-    lv_obj_clear_flag(left_col, LV_OBJ_FLAG_SCROLLABLE);
+    // Left panel: radar (490px)
+    lv_obj_t* radar_col = lv_obj_create(body);
+    lv_obj_set_size(radar_col, 490, 396);
+    lv_obj_set_style_bg_opa(radar_col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(radar_col, 0, 0);
+    lv_obj_set_style_pad_all(radar_col, 0, 0);
+    lv_obj_clear_flag(radar_col, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Temperature (48px bold)
-    emptyWidgets.label_temperature = lv_label_create(left_col);
-    lv_obj_set_style_text_font(emptyWidgets.label_temperature, &lv_font_montserrat_48, 0);
-    lv_obj_set_style_text_color(emptyWidgets.label_temperature, COLOR_TEXT_PRIMARY, 0);
-    lv_label_set_text(emptyWidgets.label_temperature, "--\xc2\xb0""F");
-    lv_obj_set_pos(emptyWidgets.label_temperature, 0, 0);
+    // Radar circle: 380px diameter, centered in 490px column -> pos (55, 8)
+    radar_circle_ = lv_obj_create(radar_col);
+    lv_obj_set_size(radar_circle_, 380, 380);
+    lv_obj_set_pos(radar_circle_, 55, 8);
+    lv_obj_set_style_radius(radar_circle_, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(radar_circle_, COLOR_INSET, 0);
+    lv_obj_set_style_bg_opa(radar_circle_, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(radar_circle_, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(radar_circle_, 1, 0);
+    lv_obj_set_style_pad_all(radar_circle_, 0, 0);
+    lv_obj_set_style_clip_corner(radar_circle_, true, 0);
+    lv_obj_clear_flag(radar_circle_, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
 
-    // Condition (16px secondary)
-    emptyWidgets.label_weather_desc = lv_label_create(left_col);
-    lv_obj_set_style_text_font(emptyWidgets.label_weather_desc, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(emptyWidgets.label_weather_desc, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(emptyWidgets.label_weather_desc, "Loading...");
-    lv_obj_set_pos(emptyWidgets.label_weather_desc, 0, 62);
+    // Inner range ring (12.5nm = half of 25nm = 190px diameter, centered)
+    lv_obj_t* ring = lv_obj_create(radar_circle_);
+    lv_obj_set_size(ring, 190, 190);
+    lv_obj_center(ring);
+    lv_obj_set_style_radius(ring, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(ring, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_color(ring, lv_color_hex(0x1a3048), 0);
+    lv_obj_set_style_border_width(ring, 1, 0);
+    lv_obj_clear_flag(ring, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
 
-    // Feels-like (12px dim)
-    emptyWidgets.label_feels_like = lv_label_create(left_col);
-    lv_obj_set_style_text_font(emptyWidgets.label_feels_like, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(emptyWidgets.label_feels_like, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(emptyWidgets.label_feels_like, "Feels: --\xc2\xb0""F");
-    lv_obj_set_pos(emptyWidgets.label_feels_like, 0, 84);
+    // Cardinal labels (N/S/E/W) at circle edge
+    struct CardinalLabel { const char* txt; lv_align_t align; int ox; int oy; };
+    const CardinalLabel cards[4] = {
+        {"N", LV_ALIGN_TOP_MID,    0,  4},
+        {"S", LV_ALIGN_BOTTOM_MID, 0, -4},
+        {"E", LV_ALIGN_RIGHT_MID, -6,  0},
+        {"W", LV_ALIGN_LEFT_MID,   6,  0},
+    };
+    for (const auto& c : cards) {
+        lv_obj_t* lbl = lv_label_create(radar_circle_);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(lbl, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(lbl, c.txt);
+        lv_obj_align(lbl, c.align, c.ox, c.oy);
+    }
 
-    // Hi/Lo (12px dim)
-    emptyWidgets.label_temp_range = lv_label_create(left_col);
-    lv_obj_set_style_text_font(emptyWidgets.label_temp_range, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(emptyWidgets.label_temp_range, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(emptyWidgets.label_temp_range, "H: --\xc2\xb0  L: --\xc2\xb0");
-    lv_obj_set_pos(emptyWidgets.label_temp_range, 0, 102);
+    // Project coastline to pixel coords once (circleRadius = Config::RADAR_CIRCLE_RADIUS = 190)
+    for (int i = 0; i < GeoUtils::COASTLINE_PORTLAND_LEN; i++) {
+        auto p = GeoUtils::latLonToRadarPx(
+            Config::HOME_LAT, Config::HOME_LON,
+            GeoUtils::COASTLINE_PORTLAND[i].lat, GeoUtils::COASTLINE_PORTLAND[i].lon,
+            Config::RADAR_MAX_RANGE_NM, Config::RADAR_CIRCLE_RADIUS);
+        radar_pts_[i] = {(lv_value_precise_t)p.x, (lv_value_precise_t)p.y};
+    }
 
-    // Divider
-    lv_obj_t* div = lv_obj_create(left_col);
-    lv_obj_set_size(div, 300, 1);
-    lv_obj_set_pos(div, 0, 124);
-    lv_obj_set_style_bg_color(div, COLOR_BORDER, 0);
-    lv_obj_set_style_border_width(div, 0, 0);
-    lv_obj_clear_flag(div, LV_OBJ_FLAG_CLICKABLE);
+    radar_coastline_ = lv_line_create(radar_circle_);
+    lv_line_set_points(radar_coastline_, radar_pts_, GeoUtils::COASTLINE_PORTLAND_LEN);
+    lv_obj_set_style_line_color(radar_coastline_, lv_color_hex(0x2a5f8a), 0);
+    lv_obj_set_style_line_width(radar_coastline_, 2, 0);
+    lv_obj_set_style_line_opa(radar_coastline_, LV_OPA_COVER, 0);
 
-    // Wind
-    lv_obj_t* lbl_wind_hdr = lv_label_create(left_col);
-    lv_obj_set_style_text_font(lbl_wind_hdr, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_wind_hdr, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(lbl_wind_hdr, "WIND");
-    lv_obj_set_pos(lbl_wind_hdr, 0, 134);
+    // PWM airport marker: + cross
+    auto pwm = GeoUtils::latLonToRadarPx(
+        Config::HOME_LAT, Config::HOME_LON,
+        Config::PWM_LAT, Config::PWM_LON,
+        Config::RADAR_MAX_RANGE_NM, Config::RADAR_CIRCLE_RADIUS);
+    // static: must outlive the lv_line objects that reference them
+    static lv_point_precise_t pwm_h[2], pwm_v[2];
+    pwm_h[0] = {(lv_value_precise_t)(pwm.x - 7), (lv_value_precise_t)pwm.y};
+    pwm_h[1] = {(lv_value_precise_t)(pwm.x + 7), (lv_value_precise_t)pwm.y};
+    pwm_v[0] = {(lv_value_precise_t)pwm.x, (lv_value_precise_t)(pwm.y - 7)};
+    pwm_v[1] = {(lv_value_precise_t)pwm.x, (lv_value_precise_t)(pwm.y + 7)};
 
-    emptyWidgets.label_wind = lv_label_create(left_col);
-    lv_obj_set_style_text_font(emptyWidgets.label_wind, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(emptyWidgets.label_wind, COLOR_TEXT_PRIMARY, 0);
-    lv_label_set_text(emptyWidgets.label_wind, "-- mph");
-    lv_obj_set_pos(emptyWidgets.label_wind, 0, 150);
+    lv_obj_t* ph = lv_line_create(radar_circle_);
+    lv_line_set_points(ph, pwm_h, 2);
+    lv_obj_set_style_line_color(ph, COLOR_AMBER, 0);
+    lv_obj_set_style_line_width(ph, 2, 0);
 
-    // Humidity
-    lv_obj_t* lbl_hum_hdr = lv_label_create(left_col);
-    lv_obj_set_style_text_font(lbl_hum_hdr, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_hum_hdr, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(lbl_hum_hdr, "HUMIDITY");
-    lv_obj_set_pos(lbl_hum_hdr, 100, 134);
+    lv_obj_t* pv = lv_line_create(radar_circle_);
+    lv_line_set_points(pv, pwm_v, 2);
+    lv_obj_set_style_line_color(pv, COLOR_AMBER, 0);
+    lv_obj_set_style_line_width(pv, 2, 0);
 
-    emptyWidgets.label_humidity_val = lv_label_create(left_col);
-    lv_obj_set_style_text_font(emptyWidgets.label_humidity_val, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(emptyWidgets.label_humidity_val, COLOR_TEXT_PRIMARY, 0);
-    lv_label_set_text(emptyWidgets.label_humidity_val, "--%");
-    lv_obj_set_pos(emptyWidgets.label_humidity_val, 100, 150);
+    lv_obj_t* pwm_lbl = lv_label_create(radar_circle_);
+    lv_obj_set_style_text_font(pwm_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(pwm_lbl, COLOR_AMBER, 0);
+    lv_label_set_text(pwm_lbl, "PWM");
+    lv_obj_set_pos(pwm_lbl, pwm.x + 9, pwm.y - 8);
 
-    // Sunrise/Sunset (amber, 14px)
-    emptyWidgets.label_sunrise = lv_label_create(left_col);
-    lv_obj_set_style_text_font(emptyWidgets.label_sunrise, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(emptyWidgets.label_sunrise, COLOR_AMBER, 0);
-    lv_label_set_text(emptyWidgets.label_sunrise, LV_SYMBOL_UP " --:--");
-    lv_obj_set_pos(emptyWidgets.label_sunrise, 0, 180);
+    // Home dot (center, 10px cyan)
+    lv_obj_t* home_dot = lv_obj_create(radar_circle_);
+    lv_obj_set_size(home_dot, 10, 10);
+    lv_obj_center(home_dot);
+    lv_obj_set_style_radius(home_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(home_dot, COLOR_ACCENT, 0);
+    lv_obj_set_style_border_width(home_dot, 0, 0);
+    lv_obj_clear_flag(home_dot, LV_OBJ_FLAG_CLICKABLE);
 
-    emptyWidgets.label_sunset = lv_label_create(left_col);
-    lv_obj_set_style_text_font(emptyWidgets.label_sunset, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(emptyWidgets.label_sunset, COLOR_AMBER, 0);
-    lv_label_set_text(emptyWidgets.label_sunset, LV_SYMBOL_DOWN " --:--");
-    lv_obj_set_pos(emptyWidgets.label_sunset, 80, 180);
+    // Range labels (near N cardinal, inside circle edge) — lv_font_montserrat_10 not enabled; use _12
+    lv_obj_t* rl1 = lv_label_create(radar_col);
+    lv_obj_set_style_text_font(rl1, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(rl1, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(rl1, "12.5nm");
+    lv_obj_set_pos(rl1, 263, 60);
 
-    // Right column: 5-day forecast (flex-fill)
-    lv_obj_t* right_col = lv_obj_create(body);
-    lv_obj_set_flex_grow(right_col, 1);
-    lv_obj_set_height(right_col, 396);
-    lv_obj_set_style_bg_opa(right_col, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_side(right_col, LV_BORDER_SIDE_LEFT, 0);
-    lv_obj_set_style_border_color(right_col, COLOR_BORDER, 0);
-    lv_obj_set_style_border_width(right_col, 1, 0);
-    lv_obj_set_style_pad_hor(right_col, 20, 0);
-    lv_obj_set_style_pad_ver(right_col, 16, 0);
-    lv_obj_clear_flag(right_col, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t* rl2 = lv_label_create(radar_col);
+    lv_obj_set_style_text_font(rl2, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(rl2, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(rl2, "25nm");
+    lv_obj_set_pos(rl2, 263, 15);
 
-    lv_obj_t* fc_hdr = lv_label_create(right_col);
-    lv_obj_set_style_text_font(fc_hdr, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(fc_hdr, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(fc_hdr, "5-DAY FORECAST");
-    lv_obj_set_pos(fc_hdr, 0, 0);
+    // Pre-allocate aircraft blip objects (all hidden at startup)
+    for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
+        RadarBlip& b = radar_blips_[i];
 
-    lv_obj_t* fc_div = lv_obj_create(right_col);
-    lv_obj_set_size(fc_div, LV_PCT(100), 1);
-    lv_obj_set_pos(fc_div, 0, 18);
-    lv_obj_set_style_bg_color(fc_div, COLOR_BORDER, 0);
-    lv_obj_set_style_border_width(fc_div, 0, 0);
-    lv_obj_clear_flag(fc_div, LV_OBJ_FLAG_CLICKABLE);
+        // Dot (12px filled circle)
+        b.dot = lv_obj_create(radar_circle_);
+        lv_obj_set_size(b.dot, 12, 12);
+        lv_obj_set_style_radius(b.dot, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(b.dot, COLOR_ACCENT, 0);
+        lv_obj_set_style_border_width(b.dot, 0, 0);
+        lv_obj_set_style_pad_all(b.dot, 0, 0);
+        lv_obj_set_pos(b.dot, Config::RADAR_CIRCLE_RADIUS - 6,
+                               Config::RADAR_CIRCLE_RADIUS - 6);
+        lv_obj_add_flag(b.dot, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(b.dot, LV_OBJ_FLAG_CLICKABLE);
 
-    for (int i = 0; i < 5; i++) {
-        int y = 26 + i * 60;
-        WeatherWidgets::ForecastRow& row = emptyWidgets.forecast[i];
+        // Heading vector (lv_line, 2 points)
+        b.vec_pts[0] = {(lv_value_precise_t)Config::RADAR_CIRCLE_RADIUS,
+                        (lv_value_precise_t)Config::RADAR_CIRCLE_RADIUS};
+        b.vec_pts[1] = {(lv_value_precise_t)Config::RADAR_CIRCLE_RADIUS,
+                        (lv_value_precise_t)(Config::RADAR_CIRCLE_RADIUS - 20)};
+        b.vector = lv_line_create(radar_circle_);
+        lv_line_set_points(b.vector, b.vec_pts, 2);
+        lv_obj_set_style_line_color(b.vector, COLOR_ACCENT, 0);
+        lv_obj_set_style_line_width(b.vector, 2, 0);
+        lv_obj_add_flag(b.vector, LV_OBJ_FLAG_HIDDEN);
 
-        row.container = lv_obj_create(right_col);
-        lv_obj_set_size(row.container, LV_PCT(100), 54);
-        lv_obj_set_pos(row.container, 0, y);
-        lv_obj_set_style_bg_opa(row.container, LV_OPA_TRANSP, 0);
+        // Callsign label
+        b.label = lv_label_create(radar_circle_);
+        lv_obj_set_style_text_font(b.label, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(b.label, COLOR_ACCENT, 0);
+        lv_label_set_text(b.label, "");
+        lv_obj_set_pos(b.label, Config::RADAR_CIRCLE_RADIUS,
+                                 Config::RADAR_CIRCLE_RADIUS);
+        lv_obj_add_flag(b.label, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    // Right panel: aircraft list (310px)
+    lv_obj_t* list_col = lv_obj_create(body);
+    lv_obj_set_size(list_col, 310, 396);
+    lv_obj_set_style_bg_color(list_col, COLOR_PANEL, 0);
+    lv_obj_set_style_bg_opa(list_col, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_side(list_col, LV_BORDER_SIDE_LEFT, 0);
+    lv_obj_set_style_border_color(list_col, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(list_col, 1, 0);
+    lv_obj_set_style_radius(list_col, 0, 0);
+    lv_obj_set_style_pad_all(list_col, 0, 0);
+    lv_obj_clear_flag(list_col, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Header label
+    label_list_header_ = lv_label_create(list_col);
+    lv_obj_set_style_text_font(label_list_header_, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(label_list_header_, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(label_list_header_, "AIRCRAFT IN RANGE  \xc2\xb7  0");
+    lv_obj_set_pos(label_list_header_, 12, 8);
+
+    // Thin divider line
+    lv_obj_t* ldiv = lv_obj_create(list_col);
+    lv_obj_set_size(ldiv, 286, 1);
+    lv_obj_set_pos(ldiv, 12, 26);
+    lv_obj_set_style_bg_color(ldiv, COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(ldiv, 0, 0);
+    lv_obj_clear_flag(ldiv, LV_OBJ_FLAG_CLICKABLE);
+
+    // Scrollable list container
+    list_container_ = lv_obj_create(list_col);
+    lv_obj_set_size(list_container_, 310, 362);
+    lv_obj_set_pos(list_container_, 0, 30);
+    lv_obj_set_style_bg_opa(list_container_, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list_container_, 0, 0);
+    lv_obj_set_style_pad_all(list_container_, 0, 0);
+    lv_obj_set_style_radius(list_container_, 0, 0);
+    lv_obj_set_layout(list_container_, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(list_container_, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(list_container_, LV_FLEX_ALIGN_START,
+                           LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_row(list_container_, 0, 0);
+
+    // Pre-allocate rows
+    for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
+        AircraftListRow& row = list_rows_[i];
+
+        row.container = lv_obj_create(list_container_);
+        lv_obj_set_width(row.container, 310);
+        lv_obj_set_height(row.container, 66);
+        lv_obj_set_style_bg_color(row.container, COLOR_PANEL, 0);
+        lv_obj_set_style_bg_opa(row.container, LV_OPA_COVER, 0);
         lv_obj_set_style_border_side(row.container, LV_BORDER_SIDE_BOTTOM, 0);
         lv_obj_set_style_border_color(row.container, COLOR_BORDER, 0);
         lv_obj_set_style_border_width(row.container, 1, 0);
         lv_obj_set_style_radius(row.container, 0, 0);
         lv_obj_set_style_pad_all(row.container, 0, 0);
         lv_obj_clear_flag(row.container, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(row.container, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(row.container, event_list_row_clicked,
+                            LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        lv_obj_add_flag(row.container, LV_OBJ_FLAG_HIDDEN);
 
-        row.label_day = lv_label_create(row.container);
-        lv_obj_set_style_text_font(row.label_day, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(row.label_day, COLOR_TEXT_SECONDARY, 0);
-        lv_label_set_text(row.label_day, "---");
-        lv_obj_align(row.label_day, LV_ALIGN_LEFT_MID, 0, 0);
+        // Left accent bar (4px wide)
+        row.accent_bar = lv_obj_create(row.container);
+        lv_obj_set_size(row.accent_bar, 4, 66);
+        lv_obj_set_pos(row.accent_bar, 0, 0);
+        lv_obj_set_style_bg_color(row.accent_bar, COLOR_ACCENT, 0);
+        lv_obj_set_style_border_width(row.accent_bar, 0, 0);
+        lv_obj_set_style_radius(row.accent_bar, 0, 0);
+        lv_obj_clear_flag(row.accent_bar, LV_OBJ_FLAG_CLICKABLE);
 
-        row.label_cond = lv_label_create(row.container);
-        lv_obj_set_style_text_font(row.label_cond, &lv_font_montserrat_12, 0);
-        lv_obj_set_style_text_color(row.label_cond, COLOR_TEXT_DIM, 0);
-        lv_label_set_text(row.label_cond, "");
-        lv_obj_align(row.label_cond, LV_ALIGN_CENTER, 0, 0);
+        row.label_callsign = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_callsign, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_color(row.label_callsign, COLOR_ACCENT, 0);
+        lv_label_set_text(row.label_callsign, "------");
+        lv_obj_set_pos(row.label_callsign, 14, 8);
 
-        row.label_hi = lv_label_create(row.container);
-        lv_obj_set_style_text_font(row.label_hi, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(row.label_hi, COLOR_TEXT_PRIMARY, 0);
-        lv_label_set_text(row.label_hi, "--\xc2\xb0");
-        lv_obj_align(row.label_hi, LV_ALIGN_RIGHT_MID, -30, 0);
+        row.label_type_route = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_type_route, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(row.label_type_route, COLOR_TEXT_SECONDARY, 0);
+        lv_label_set_text(row.label_type_route, "");
+        lv_obj_set_pos(row.label_type_route, 14, 30);
 
-        row.label_lo = lv_label_create(row.container);
-        lv_obj_set_style_text_font(row.label_lo, &lv_font_montserrat_12, 0);
-        lv_obj_set_style_text_color(row.label_lo, COLOR_TEXT_DIM, 0);
-        lv_label_set_text(row.label_lo, "--\xc2\xb0");
-        lv_obj_align(row.label_lo, LV_ALIGN_RIGHT_MID, 0, 0);
+        row.label_summary = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_summary, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(row.label_summary, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(row.label_summary, "");
+        lv_obj_set_pos(row.label_summary, 14, 48);
+
+        // Expanded panel (hidden when collapsed)
+        row.expanded_panel = lv_obj_create(row.container);
+        lv_obj_set_size(row.expanded_panel, 306, 72);
+        lv_obj_set_pos(row.expanded_panel, 0, 66);
+        lv_obj_set_style_bg_color(row.expanded_panel, lv_color_hex(0x0a1428), 0);
+        lv_obj_set_style_bg_opa(row.expanded_panel, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(row.expanded_panel, 0, 0);
+        lv_obj_set_style_radius(row.expanded_panel, 0, 0);
+        lv_obj_set_style_pad_hor(row.expanded_panel, 14, 0);
+        lv_obj_set_style_pad_ver(row.expanded_panel, 6, 0);
+        lv_obj_clear_flag(row.expanded_panel,
+                          (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
+        lv_obj_add_flag(row.expanded_panel, LV_OBJ_FLAG_HIDDEN);
+
+        // Expanded field labels: row 1 (alt / speed / hdg)
+        row.label_alt = lv_label_create(row.expanded_panel);
+        lv_obj_set_style_text_font(row.label_alt, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(row.label_alt, COLOR_TEXT_PRIMARY, 0);
+        lv_label_set_text(row.label_alt, "--,--- ft");
+        lv_obj_set_pos(row.label_alt, 0, 4);
+
+        row.label_speed = lv_label_create(row.expanded_panel);
+        lv_obj_set_style_text_font(row.label_speed, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(row.label_speed, COLOR_TEXT_PRIMARY, 0);
+        lv_label_set_text(row.label_speed, "--- kt");
+        lv_obj_set_pos(row.label_speed, 100, 4);
+
+        row.label_hdg = lv_label_create(row.expanded_panel);
+        lv_obj_set_style_text_font(row.label_hdg, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(row.label_hdg, COLOR_TEXT_PRIMARY, 0);
+        lv_label_set_text(row.label_hdg, "---\xc2\xb0");
+        lv_obj_set_pos(row.label_hdg, 195, 4);
+
+        // Expanded field labels: row 2 (dist / status)
+        row.label_dist = lv_label_create(row.expanded_panel);
+        lv_obj_set_style_text_font(row.label_dist, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(row.label_dist, COLOR_TEXT_PRIMARY, 0);
+        lv_label_set_text(row.label_dist, "-.- nm");
+        lv_obj_set_pos(row.label_dist, 0, 34);
+
+        row.label_status = lv_label_create(row.expanded_panel);
+        lv_obj_set_style_text_font(row.label_status, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(row.label_status, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(row.label_status, "");
+        lv_obj_set_pos(row.label_status, 100, 36);
     }
-}
-
-void LVGLDisplayManager::build_no_aircraft_screen() {
-    // Backward-compat stub: the no-aircraft state is now handled by screen_home_empty,
-    // built in build_home_empty_screen(). Nothing to do here.
-}
-
-void LVGLDisplayManager::build_aircraft_screen() {
-    screen_aircraft = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen_aircraft, COLOR_BG, 0);
-    lv_obj_set_style_bg_opa(screen_aircraft, LV_OPA_COVER, 0);
-
-    // === TOP BAR (70px — slightly taller than home) ===
-    lv_obj_t* topbar = lv_obj_create(screen_aircraft);
-    lv_obj_set_size(topbar, hal::Elecrow5Inch::PANEL_WIDTH, 70);
-    lv_obj_set_pos(topbar, 0, 0);
-    lv_obj_set_style_bg_color(topbar, COLOR_TOPBAR, 0);
-    lv_obj_set_style_border_side(topbar, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_border_color(topbar, COLOR_BORDER, 0);
-    lv_obj_set_style_border_width(topbar, 1, 0);
-    lv_obj_set_style_radius(topbar, 0, 0);
-    lv_obj_set_style_pad_all(topbar, 0, 0);
-    lv_obj_clear_flag(topbar, LV_OBJ_FLAG_SCROLLABLE);
-
-    // Back button (left)
-    btn_back_home = lv_button_create(topbar);
-    lv_obj_set_size(btn_back_home, 90, 42);
-    lv_obj_align(btn_back_home, LV_ALIGN_LEFT_MID, 16, 0);
-    lv_obj_set_style_bg_opa(btn_back_home, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_color(btn_back_home, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_width(btn_back_home, 1, 0);
-    lv_obj_set_style_border_opa(btn_back_home, 80, 0);
-    lv_obj_set_style_radius(btn_back_home, 4, 0);
-    lv_obj_add_event_cb(btn_back_home, event_btn_back_home, LV_EVENT_CLICKED, this);
-
-    lv_obj_t* back_lbl = lv_label_create(btn_back_home);
-    lv_obj_set_style_text_font(back_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(back_lbl, COLOR_ACCENT, 0);
-    lv_label_set_text(back_lbl, LV_SYMBOL_LEFT " BACK");
-    lv_obj_center(back_lbl);
-
-    // Callsign (center, 36px bold cyan)
-    label_callsign = lv_label_create(topbar);
-    lv_obj_set_style_text_font(label_callsign, &lv_font_montserrat_36, 0);
-    lv_obj_set_style_text_color(label_callsign, COLOR_ACCENT, 0);
-    lv_label_set_text(label_callsign, "---");
-    lv_obj_align(label_callsign, LV_ALIGN_CENTER, 0, 0);
-
-    // Distance + bearing (right side, stacked)
-    label_distance = lv_label_create(topbar);
-    lv_obj_set_style_text_font(label_distance, &lv_font_montserrat_22, 0);
-    lv_obj_set_style_text_color(label_distance, COLOR_TEXT_PRIMARY, 0);
-    lv_label_set_text(label_distance, "-- nm / --\xc2\xb0");
-    lv_obj_align(label_distance, LV_ALIGN_RIGHT_MID, -18, -8);
-
-    lv_obj_t* lbl_loc = lv_label_create(topbar);
-    lv_obj_set_style_text_font(lbl_loc, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_loc, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(lbl_loc, "FROM " WEATHER_CITY_MACRO);
-    lv_obj_align(lbl_loc, LV_ALIGN_RIGHT_MID, -18, 12);
 
     // === STATUS BAR (26px, bottom) ===
-    lv_obj_t* sbar = lv_obj_create(screen_aircraft);
+    lv_obj_t* sbar = lv_obj_create(screen_radar);
     lv_obj_set_size(sbar, hal::Elecrow5Inch::PANEL_WIDTH, 26);
     lv_obj_align(sbar, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_bg_color(sbar, COLOR_STATUSBAR, 0);
@@ -1018,236 +1038,48 @@ void LVGLDisplayManager::build_aircraft_screen() {
     lv_obj_set_style_border_color(sbar, COLOR_BORDER, 0);
     lv_obj_set_style_border_width(sbar, 1, 0);
     lv_obj_set_style_radius(sbar, 0, 0);
-    lv_obj_set_style_pad_hor(sbar, 12, 0);
+    lv_obj_set_style_pad_all(sbar, 0, 0);
     lv_obj_clear_flag(sbar, LV_OBJ_FLAG_SCROLLABLE);
 
-    label_status_aircraft = lv_label_create(sbar);
-    lv_obj_set_style_text_font(label_status_aircraft, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(label_status_aircraft, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(label_status_aircraft, "");
-    lv_obj_align(label_status_aircraft, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_t* sbar_left = lv_label_create(sbar);
+    lv_obj_set_style_text_font(sbar_left, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(sbar_left, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(sbar_left, "OPENSKY OK");
+    lv_obj_align(sbar_left, LV_ALIGN_LEFT_MID, 12, 0);
 
-    // === BODY (top:70, bottom:26, height:384, padding 14 18) ===
-    lv_obj_t* body = lv_obj_create(screen_aircraft);
-    lv_obj_set_size(body, hal::Elecrow5Inch::PANEL_WIDTH, 384);
-    lv_obj_set_pos(body, 0, 70);
-    lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(body, 0, 0);
-    lv_obj_set_style_pad_hor(body, 18, 0);
-    lv_obj_set_style_pad_ver(body, 14, 0);
-    lv_obj_set_style_radius(body, 0, 0);
-    lv_obj_clear_flag(body, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_layout(body, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(body, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(body, 10, 0);
-    lv_obj_set_style_pad_column(body, 10, 0);
+    lv_obj_t* sbar_hint = lv_label_create(sbar);
+    lv_obj_set_style_text_font(sbar_hint, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(sbar_hint, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(sbar_hint, "tap top bar to return home");
+    lv_obj_align(sbar_hint, LV_ALIGN_CENTER, 0, 0);
 
-    // === ROW 1: Identity cards (flex row) ===
-    lv_obj_t* row1 = lv_obj_create(body);
-    lv_obj_set_size(row1, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_opa(row1, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(row1, 0, 0);
-    lv_obj_set_style_pad_all(row1, 0, 0);
-    lv_obj_set_style_radius(row1, 0, 0);
-    lv_obj_clear_flag(row1, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_layout(row1, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(row1, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(row1, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(row1, 10, 0);
-    lv_obj_set_style_pad_column(row1, 10, 0);
-
-    // Helper lambda: create an identity card
-    auto makeCard = [&](lv_obj_t* parent, const char* labelText, lv_obj_t** valueLabel,
-                        bool isSquawk = false) {
-        lv_obj_t* card = lv_obj_create(parent);
-        lv_obj_set_size(card, LV_SIZE_CONTENT, 52);
-        lv_obj_set_style_bg_color(card, COLOR_PANEL, 0);
-        lv_obj_set_style_border_color(card, COLOR_BORDER, 0);
-        lv_obj_set_style_border_width(card, 1, 0);
-        lv_obj_set_style_radius(card, 4, 0);
-        lv_obj_set_style_pad_hor(card, 12, 0);
-        lv_obj_set_style_pad_ver(card, 6, 0);
-        lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t* lbl = lv_label_create(card);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
-        lv_obj_set_style_text_color(lbl, COLOR_TEXT_DIM, 0);
-        lv_label_set_text(lbl, labelText);
-        lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 0, 0);
-
-        *valueLabel = lv_label_create(card);
-        lv_obj_set_style_text_font(*valueLabel, &lv_font_montserrat_16, 0);
-        lv_obj_set_style_text_color(*valueLabel,
-            isSquawk ? COLOR_AMBER : COLOR_TEXT_PRIMARY, 0);
-        lv_label_set_text(*valueLabel, "--");
-        lv_obj_align(*valueLabel, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    };
-
-    makeCard(row1, "AIRLINE",  &label_airline);
-    makeCard(row1, "AIRCRAFT", &label_aircraft_type);
-    makeCard(row1, "SQUAWK",   &label_squawk, true);
-
-    // === ROW 2: Route block ===
-    lv_obj_t* route_block = lv_obj_create(body);
-    lv_obj_set_size(route_block, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_color(route_block, COLOR_INSET, 0);
-    lv_obj_set_style_border_color(route_block, COLOR_BORDER_ACCENT, 0);
-    lv_obj_set_style_border_width(route_block, 1, 0);
-    lv_obj_set_style_radius(route_block, 6, 0);
-    lv_obj_set_style_pad_hor(route_block, 18, 0);
-    lv_obj_set_style_pad_ver(route_block, 12, 0);
-    lv_obj_clear_flag(route_block, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t* route_hdr = lv_label_create(route_block);
-    lv_obj_set_style_text_font(route_hdr, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(route_hdr, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(route_hdr, "ROUTE");
-    lv_obj_align(route_hdr, LV_ALIGN_TOP_LEFT, 0, 0);
-
-    label_route_main = lv_label_create(route_block);
-    lv_obj_set_style_text_font(label_route_main, &lv_font_montserrat_28, 0);
-    lv_obj_set_style_text_color(label_route_main, COLOR_ACCENT, 0);
-    lv_label_set_text(label_route_main, "LOOKING UP...");
-    lv_obj_align(label_route_main, LV_ALIGN_TOP_LEFT, 0, 18);
-
-    label_route_sub = lv_label_create(route_block);
-    lv_obj_set_style_text_font(label_route_sub, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(label_route_sub, COLOR_TEXT_SECONDARY, 0);
-    lv_label_set_text(label_route_sub, "");
-    lv_obj_align(label_route_sub, LV_ALIGN_TOP_LEFT, 0, 52);
-
-    // === ROW 3: Instrument tiles ===
-    lv_obj_t* row3 = lv_obj_create(body);
-    lv_obj_set_flex_grow(row3, 1);
-    lv_obj_set_width(row3, LV_PCT(100));
-    lv_obj_set_style_bg_opa(row3, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(row3, 0, 0);
-    lv_obj_set_style_pad_all(row3, 0, 0);
-    lv_obj_set_style_radius(row3, 0, 0);
-    lv_obj_clear_flag(row3, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_layout(row3, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(row3, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(row3, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    auto makeTile = [&](lv_obj_t* parent, const char* tileLabel, lv_obj_t** valueLabel) {
-        lv_obj_t* tile = lv_obj_create(parent);
-        lv_obj_set_flex_grow(tile, 1);
-        lv_obj_set_height(tile, LV_PCT(100));
-        lv_obj_set_style_bg_color(tile, COLOR_PANEL, 0);
-        lv_obj_set_style_border_color(tile, COLOR_BORDER, 0);
-        lv_obj_set_style_border_width(tile, 1, 0);
-        lv_obj_set_style_radius(tile, 5, 0);
-        lv_obj_set_style_pad_all(tile, 10, 0);
-        lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_layout(tile, LV_LAYOUT_FLEX);
-        lv_obj_set_flex_flow(tile, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(tile, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_row(tile, 6, 0);
-        lv_obj_set_style_pad_column(tile, 6, 0);
-
-        lv_obj_t* lbl = lv_label_create(tile);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
-        lv_obj_set_style_text_color(lbl, COLOR_TEXT_DIM, 0);
-        lv_label_set_text(lbl, tileLabel);
-
-        *valueLabel = lv_label_create(tile);
-        lv_obj_set_style_text_font(*valueLabel, &lv_font_montserrat_22, 0);
-        lv_obj_set_style_text_color(*valueLabel, COLOR_TEXT_PRIMARY, 0);
-        lv_label_set_text(*valueLabel, "--");
-    };
-
-    makeTile(row3, "ALTITUDE",   &label_altitude);
-    makeTile(row3, "SPEED",      &label_velocity);
-    makeTile(row3, "HEADING",    &label_heading);
-    makeTile(row3, "VERT SPEED", &label_vert_speed);
+    lv_obj_t* sbar_live = lv_label_create(sbar);
+    lv_obj_set_style_text_font(sbar_live, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(sbar_live, COLOR_SUCCESS, 0);
+    lv_label_set_text(sbar_live, "\xe2\x97\x8f LIVE");
+    lv_obj_align(sbar_live, LV_ALIGN_RIGHT_MID, -12, 0);
 }
 
-// Update aircraft screen
-void LVGLDisplayManager::update_aircraft_screen(const Aircraft& aircraft) {
-    if (!screen_aircraft) return;
+void LVGLDisplayManager::update_home_screen(const WeatherData& weather,
+                                             int aircraftCount) {
+    update_clock(homeWidgets);
+    updateWeatherWidgets(homeWidgets, weather, aircraftCount);
 
-    lv_label_set_text(label_callsign, aircraft.callsign.c_str());
+    if (!label_airspace_status_) return;
 
-    // Distance + bearing from home
-    float distNm = GeoUtils::distanceNm(
-        Config::HOME_LAT, Config::HOME_LON,
-        aircraft.latitude, aircraft.longitude);
-    float bearing = GeoUtils::bearingDeg(
-        Config::HOME_LAT, Config::HOME_LON,
-        aircraft.latitude, aircraft.longitude);
-    const char* card = GeoUtils::cardinalDir(bearing);
-
-    char dist_buf[48];
-    snprintf(dist_buf, sizeof(dist_buf), "%.1f nm / %.0f\xc2\xb0 %s", distNm, bearing, card);
-    lv_label_set_text(label_distance, dist_buf);
-
-    // Identity cards
-    lv_label_set_text(label_airline,
-        aircraft.airline.length() > 0 ? aircraft.airline.c_str() : "Unknown");
-    lv_label_set_text(label_aircraft_type,
-        aircraft.aircraftType.length() > 0 ? aircraft.aircraftType.c_str() : "Aircraft");
-    lv_label_set_text(label_squawk,
-        aircraft.squawk.length() > 0 ? aircraft.squawk.c_str() : "----");
-
-    // Route block
-    if (aircraft.origin.length() > 0 && aircraft.destination.length() > 0) {
-        char route_buf[64];
-        snprintf(route_buf, sizeof(route_buf), "%s  >  %s",
-                 aircraft.origin.c_str(), aircraft.destination.c_str());
-        lv_label_set_text(label_route_main, route_buf);
-        lv_obj_set_style_text_color(label_route_main, COLOR_ACCENT, 0);
-
-        // Sub-label: city names (e.g. "Boston, US  ·  Los Angeles, US")
-        if (aircraft.originDisplay.length() > 0 || aircraft.destinationDisplay.length() > 0) {
-            char sub_buf[96];
-            const char* orgStr = aircraft.originDisplay.length() > 0
-                ? aircraft.originDisplay.c_str() : aircraft.origin.c_str();
-            const char* dstStr = aircraft.destinationDisplay.length() > 0
-                ? aircraft.destinationDisplay.c_str() : aircraft.destination.c_str();
-            snprintf(sub_buf, sizeof(sub_buf), "%s  |  %s", orgStr, dstStr);
-            lv_label_set_text(label_route_sub, sub_buf);
-        } else {
-            lv_label_set_text(label_route_sub, "");
-        }
-    } else if (!aircraft.routeLookupDone) {
-        lv_label_set_text(label_route_main, "LOOKING UP...");
-        lv_obj_set_style_text_color(label_route_main, COLOR_TEXT_DIM, 0);
-        lv_label_set_text(label_route_sub, "");
+    if (aircraftCount > 0) {
+        char buf[40];
+        snprintf(buf, sizeof(buf), "\xe2\x97\x8f %d AIRCRAFT NEARBY", aircraftCount);
+        lv_obj_set_style_text_color(label_airspace_status_, COLOR_AMBER, 0);
+        lv_label_set_text(label_airspace_status_, buf);
+        lv_label_set_text(label_airspace_sub_, "Switching to radar...");
     } else {
-        lv_label_set_text(label_route_main, "ROUTE UNAVAILABLE");
-        lv_obj_set_style_text_color(label_route_main, COLOR_TEXT_DIM, 0);
-        lv_label_set_text(label_route_sub, "");
-    }
-
-    // Altitude (m -> ft)
-    char alt_buf[24];
-    snprintf(alt_buf, sizeof(alt_buf), "%.0f ft", aircraft.altitude * 3.28084f);
-    lv_label_set_text(label_altitude, alt_buf);
-
-    // Speed (m/s -> kts)
-    char vel_buf[24];
-    snprintf(vel_buf, sizeof(vel_buf), "%.0f kts", aircraft.velocity * 1.94384f);
-    lv_label_set_text(label_velocity, vel_buf);
-
-    // Heading + cardinal
-    char head_buf[24];
-    snprintf(head_buf, sizeof(head_buf), "%.0f\xc2\xb0 %s",
-             aircraft.heading, GeoUtils::cardinalDir(aircraft.heading));
-    lv_label_set_text(label_heading, head_buf);
-
-    // Vertical speed (m/s -> fpm), color-coded
-    float fpm = aircraft.verticalRate * 196.85f;
-    char vs_buf[24];
-    snprintf(vs_buf, sizeof(vs_buf), "%+.0f fpm", fpm);
-    lv_label_set_text(label_vert_speed, vs_buf);
-    if (fpm > 50.0f) {
-        lv_obj_set_style_text_color(label_vert_speed, COLOR_SUCCESS, 0);
-    } else if (fpm < -50.0f) {
-        lv_obj_set_style_text_color(label_vert_speed, COLOR_DESCENT, 0);
-    } else {
-        lv_obj_set_style_text_color(label_vert_speed, COLOR_TEXT_PRIMARY, 0);
+        lv_obj_set_style_text_color(label_airspace_status_, COLOR_SUCCESS, 0);
+        lv_label_set_text(label_airspace_status_, "\xe2\x97\x8f AIRSPACE CLEAR");
+        lv_label_set_text(label_airspace_sub_, "No aircraft within 25nm");
     }
 }
+
 
 // Update clock
 void LVGLDisplayManager::update_clock(WeatherWidgets& w) {
@@ -1265,9 +1097,182 @@ void LVGLDisplayManager::update_clock(WeatherWidgets& w) {
     if (statusClearTime > 0 && millis() >= statusClearTime) {
         statusClearTime = 0;
         statusMessage = "";
-        if (homeWidgets.label_status_left)  lv_label_set_text(homeWidgets.label_status_left,  "");
-        if (emptyWidgets.label_status_left) lv_label_set_text(emptyWidgets.label_status_left, "");
-        if (label_status_aircraft)          lv_label_set_text(label_status_aircraft,           "");
+        if (homeWidgets.label_status_left) lv_label_set_text(homeWidgets.label_status_left, "");
+    }
+}
+
+void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
+                                               int aircraftCount) {
+    if (!label_radar_count_) return;
+
+    // Update top bar clock
+    {
+        struct tm ti;
+        if (getLocalTime(&ti)) {
+            char tb[12];
+            strftime(tb, sizeof(tb), "%H:%M", &ti);
+            lv_label_set_text(label_radar_time_, tb);
+            char db[20];
+            strftime(db, sizeof(db), "%a %d %b %Y", &ti);
+            lv_label_set_text(label_radar_date_, db);
+        }
+        char cb[32];
+        snprintf(cb, sizeof(cb), "\xe2\x97\x8f %d AIRCRAFT NEARBY", aircraftCount);
+        lv_label_set_text(label_radar_count_, cb);
+    }
+
+    // Update list header
+    {
+        char hb[40];
+        snprintf(hb, sizeof(hb), "AIRCRAFT IN RANGE  \xc2\xb7  %d", aircraftCount);
+        lv_label_set_text(label_list_header_, hb);
+    }
+
+    // If selected aircraft left range, reset selection to row 0 (or -1 if empty)
+    if (list_selected_idx_ >= aircraftCount) {
+        if (list_selected_idx_ >= 0 && list_selected_idx_ < Config::MAX_AIRCRAFT) {
+            lv_obj_add_flag(list_rows_[list_selected_idx_].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_height(list_rows_[list_selected_idx_].container, 66);
+        }
+        list_selected_idx_ = (aircraftCount > 0) ? 0 : -1;
+        if (list_selected_idx_ == 0) {
+            lv_obj_remove_flag(list_rows_[0].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_height(list_rows_[0].container, 138);
+        }
+    }
+
+    // Auto-expand row 0 on first entry (no prior selection)
+    if (aircraftCount > 0 && list_selected_idx_ < 0) {
+        list_selected_idx_ = 0;
+        lv_obj_remove_flag(list_rows_[0].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_height(list_rows_[0].container, 138);
+    }
+
+    for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
+        RadarBlip&       blip = radar_blips_[i];
+        AircraftListRow& row  = list_rows_[i];
+
+        if (!blip.dot || !row.container) continue;
+
+        if (aircraft && i < aircraftCount && aircraft[i].valid) {
+            const Aircraft& a = aircraft[i];
+
+            // --- Compute position ---
+            float distNm  = GeoUtils::distanceNm(Config::HOME_LAT, Config::HOME_LON,
+                                                   a.latitude, a.longitude);
+            float bearing = GeoUtils::bearingDeg(Config::HOME_LAT, Config::HOME_LON,
+                                                  a.latitude, a.longitude);
+            auto  pos     = GeoUtils::blipPosition(distNm, bearing,
+                                                    Config::RADAR_MAX_RANGE_NM,
+                                                    Config::RADAR_CIRCLE_RADIUS, 8);
+
+            float altFt   = a.altitude * 3.28084f;
+            lv_color_t blipColor = (altFt > 0.0f && altFt < 5000.0f)
+                                   ? COLOR_AMBER : COLOR_ACCENT;
+
+            // --- Radar blip ---
+            lv_obj_set_pos(blip.dot, pos.x - 6, pos.y - 6);
+            lv_obj_set_style_bg_color(blip.dot, blipColor, 0);
+            lv_obj_set_style_line_color(blip.vector, blipColor, 0);
+            lv_obj_set_style_text_color(blip.label, blipColor, 0);
+            lv_obj_remove_flag(blip.dot, LV_OBJ_FLAG_HIDDEN);
+
+            // Heading vector (20px)
+            float rad = a.heading * GeoUtils::DEG_TO_RAD;
+            blip.vec_pts[0] = {(lv_value_precise_t)pos.x, (lv_value_precise_t)pos.y};
+            blip.vec_pts[1] = {
+                (lv_value_precise_t)(pos.x + 20.0f * sinf(rad)),
+                (lv_value_precise_t)(pos.y - 20.0f * cosf(rad))
+            };
+            lv_line_set_points(blip.vector, blip.vec_pts, 2);
+            lv_obj_remove_flag(blip.vector, LV_OBJ_FLAG_HIDDEN);
+
+            // Callsign label
+            lv_label_set_text(blip.label, a.callsign.c_str());
+            lv_obj_set_pos(blip.label, pos.x + 10, pos.y - 8);
+            lv_obj_remove_flag(blip.label, LV_OBJ_FLAG_HIDDEN);
+
+            // Selection ring (shown on selected blip)
+            if (i == list_selected_idx_) {
+                lv_obj_set_style_border_color(blip.dot, COLOR_TEXT_PRIMARY, 0);
+                lv_obj_set_style_border_width(blip.dot, 2, 0);
+                lv_obj_set_style_border_opa(blip.dot, 160, 0);
+            } else {
+                lv_obj_set_style_border_width(blip.dot, 0, 0);
+            }
+
+            // --- List row ---
+            lv_obj_remove_flag(row.container, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_bg_color(row.accent_bar, blipColor, 0);
+            lv_obj_set_style_text_color(row.label_callsign, blipColor, 0);
+            lv_label_set_text(row.label_callsign, a.callsign.c_str());
+
+            // Type · route
+            char tr[64];
+            if (!a.aircraftType.isEmpty() && !a.origin.isEmpty() && !a.destination.isEmpty()) {
+                snprintf(tr, sizeof(tr), "%s  \xc2\xb7  %s \xe2\x86\x92 %s",
+                         a.aircraftType.c_str(), a.origin.c_str(), a.destination.c_str());
+            } else if (!a.origin.isEmpty() && !a.destination.isEmpty()) {
+                snprintf(tr, sizeof(tr), "%s \xe2\x86\x92 %s",
+                         a.origin.c_str(), a.destination.c_str());
+            } else if (!a.aircraftType.isEmpty()) {
+                snprintf(tr, sizeof(tr), "%s", a.aircraftType.c_str());
+            } else {
+                snprintf(tr, sizeof(tr), "Unknown type");
+            }
+            lv_label_set_text(row.label_type_route, tr);
+
+            // Summary line (collapsed)
+            char sm[80];
+            float speedKt = a.velocity * 1.94384f;
+            snprintf(sm, sizeof(sm), "%.0f ft  \xc2\xb7  %.0f kt  \xc2\xb7  %s  \xc2\xb7  %.1f nm",
+                     altFt, speedKt, GeoUtils::cardinalDir(bearing), distNm);
+            lv_label_set_text(row.label_summary, sm);
+
+            // Expanded fields
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.0f ft", altFt);
+            lv_label_set_text(row.label_alt, buf);
+
+            snprintf(buf, sizeof(buf), "%.0f kt", speedKt);
+            lv_label_set_text(row.label_speed, buf);
+
+            snprintf(buf, sizeof(buf), "%.0f\xc2\xb0 %s",
+                     a.heading, GeoUtils::cardinalDir(a.heading));
+            lv_label_set_text(row.label_hdg, buf);
+
+            snprintf(buf, sizeof(buf), "%.1f nm %s",
+                     distNm, GeoUtils::cardinalDir(bearing));
+            lv_label_set_text(row.label_dist, buf);
+
+            // STATUS field
+            float distToPwmNm = GeoUtils::distanceNm(Config::PWM_LAT, Config::PWM_LON,
+                                                       a.latitude, a.longitude);
+            float bearingToPwm = GeoUtils::bearingDeg(a.latitude, a.longitude,
+                                                       Config::PWM_LAT, Config::PWM_LON);
+            float hdgDiff = fabsf(fmodf(a.heading - bearingToPwm + 360.0f, 360.0f));
+            if (hdgDiff > 180.0f) hdgDiff = 360.0f - hdgDiff;
+
+            const char* statusTxt;
+            if (altFt >= 5000.0f) {
+                statusTxt = "CRUISING";
+            } else if (distToPwmNm < 15.0f && hdgDiff < 30.0f) {
+                statusTxt = "ON APPROACH";
+            } else if (distToPwmNm < 15.0f) {
+                statusTxt = "DEPARTING";
+            } else {
+                statusTxt = "LOW / OVERFLYING";
+            }
+            lv_obj_set_style_text_color(row.label_status, blipColor, 0);
+            lv_label_set_text(row.label_status, statusTxt);
+
+        } else {
+            // Hide blip and row
+            lv_obj_add_flag(blip.dot,    LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(blip.vector, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(blip.label,  LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(row.container, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 }
 
@@ -1275,9 +1280,9 @@ void LVGLDisplayManager::update_clock(WeatherWidgets& w) {
 void LVGLDisplayManager::update(const WeatherData& weather, const Aircraft* aircraft, int aircraftCount) {
     lv_lock();
     if (currentScreen == SCREEN_HOME) {
-        update_home_screen(weather, aircraft, aircraftCount);
-    } else if (currentScreen == SCREEN_AIRCRAFT_DETAIL && aircraft && aircraft->valid) {
-        update_aircraft_screen(*aircraft);
+        update_home_screen(weather, aircraftCount);
+    } else if (currentScreen == SCREEN_RADAR) {
+        update_radar_screen(aircraft, aircraftCount);
     }
     lv_unlock();
 }
@@ -1287,24 +1292,22 @@ void LVGLDisplayManager::tick(uint32_t /*period_ms*/) {}
 
 // Screen management
 void LVGLDisplayManager::setScreen(ScreenState screen) {
-    ScreenState target = (screen == SCREEN_NO_AIRCRAFT) ? SCREEN_HOME : screen;
     lv_lock();
-    if (currentScreen == target) {
+    if (currentScreen == screen) {
         lv_unlock();
         return;
     }
-
-    currentScreen = target;
-    lastScreenChange = millis();
-
-    switch (target) {
+    switch (screen) {
         case SCREEN_HOME:
-            lv_screen_load(homeHasAircraft ? screen_home : screen_home_empty);
+            currentScreen = screen;
+            lastScreenChange = millis();
+            if (screen_home) lv_screen_load_anim(screen_home, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
             break;
-        case SCREEN_AIRCRAFT_DETAIL:
-            lv_screen_load(screen_aircraft);
-            break;
-        default:
+        case SCREEN_RADAR:
+            if (!screen_radar) { lv_unlock(); return; }  // not built yet — stay on current screen
+            currentScreen = screen;
+            lastScreenChange = millis();
+            lv_screen_load_anim(screen_radar, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
             break;
     }
     lv_unlock();
@@ -1316,22 +1319,6 @@ bool LVGLDisplayManager::shouldReturnToHome() {
     
     unsigned long idleTime = millis() - lastUserInteraction;
     return idleTime >= Config::UI_AUTO_HOME_MS;
-}
-
-// Event callbacks
-void LVGLDisplayManager::event_btn_view_planes(lv_event_t* e) {
-    LVGLDisplayManager* mgr = (LVGLDisplayManager*)lv_event_get_user_data(e);
-    if (mgr) {
-        mgr->setScreen(SCREEN_AIRCRAFT_DETAIL);
-    }
-}
-
-void LVGLDisplayManager::event_btn_back_home(lv_event_t* e) {
-    LVGLDisplayManager* mgr = (LVGLDisplayManager*)lv_event_get_user_data(e);
-    if (mgr) {
-        mgr->userDismissed_ = true;  // signal App to suppress auto-switch
-        mgr->setScreen(SCREEN_HOME);
-    }
 }
 
 bool LVGLDisplayManager::wasUserDismissed() {
@@ -1380,20 +1367,60 @@ void LVGLDisplayManager::setStatusMessage(const String& msg) {
     lv_lock();
     statusMessage = msg;
     statusClearTime = millis() + Config::UI_STATUS_MS;
-    if (homeWidgets.label_status_left)  lv_label_set_text(homeWidgets.label_status_left,  msg.c_str());
-    if (emptyWidgets.label_status_left) lv_label_set_text(emptyWidgets.label_status_left, msg.c_str());
-    if (label_status_aircraft)          lv_label_set_text(label_status_aircraft,           msg.c_str());
+    if (homeWidgets.label_status_left) lv_label_set_text(homeWidgets.label_status_left, msg.c_str());
     lv_unlock();
+}
+
+// Event callbacks — registered in Task 6/8
+void LVGLDisplayManager::event_list_row_clicked(lv_event_t* e) {
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    if (s_instance) s_instance->onListRowClicked(idx);
+}
+
+void LVGLDisplayManager::onListRowClicked(int idx) {
+    if (idx < 0 || idx >= Config::MAX_AIRCRAFT) return;
+    if (!list_rows_[idx].container) return;
+
+    if (list_selected_idx_ == idx) {
+        // Tap currently selected row → collapse
+        lv_obj_add_flag(list_rows_[idx].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_height(list_rows_[idx].container, 66);
+        list_selected_idx_ = -1;
+        if (radar_blips_[idx].dot)
+            lv_obj_set_style_border_width(radar_blips_[idx].dot, 0, 0);
+        return;
+    }
+
+    // Collapse previously selected
+    if (list_selected_idx_ >= 0 && list_selected_idx_ < Config::MAX_AIRCRAFT) {
+        int prev = list_selected_idx_;
+        lv_obj_add_flag(list_rows_[prev].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_height(list_rows_[prev].container, 66);
+        if (radar_blips_[prev].dot)
+            lv_obj_set_style_border_width(radar_blips_[prev].dot, 0, 0);
+    }
+
+    // Expand new row
+    lv_obj_remove_flag(list_rows_[idx].expanded_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_height(list_rows_[idx].container, 138);  // 66 header + 72 expanded
+    list_selected_idx_ = idx;
+
+    // Highlight corresponding radar blip
+    if (radar_blips_[idx].dot) {
+        lv_obj_set_style_border_color(radar_blips_[idx].dot, COLOR_TEXT_PRIMARY, 0);
+        lv_obj_set_style_border_width(radar_blips_[idx].dot, 2, 0);
+        lv_obj_set_style_border_opa(radar_blips_[idx].dot, 160, 0);
+    }
+}
+
+void LVGLDisplayManager::event_topbar_back(lv_event_t* e) {
+    (void)e;
+    if (s_instance) s_instance->userDismissed_ = true;
 }
 
 // Touch processing (LVGL handles this automatically)
 void LVGLDisplayManager::processTouch() {
     // LVGL handles touch automatically via touchpad_read callback
-}
-
-// Accessors
-lgfx::LGFX_Device* LVGLDisplayManager::getDisplay() {
-    return lcd;
 }
 
 lgfx::LGFX_Device* LVGLDisplayManager::getLCD() {

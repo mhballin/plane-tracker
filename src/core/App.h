@@ -46,10 +46,7 @@ private:
     WiFiManager wifiManager_;
 
     int currentAircraftCount_;
-    int currentAircraftIndex_;
-    uint32_t lastPlaneSwitchMs_;
     uint32_t lastTickMs_;
-    uint32_t lastRedrawnScreenChange_;
 
     int8_t weatherTaskId_;
     int8_t aircraftTaskId_;
@@ -57,8 +54,6 @@ private:
     int8_t healthTaskId_;
 
     RouteCache*   routeCache_;
-    bool          routeFetchDone_;
-    String        lastRouteFetchCallsign_;
     bool          aircraftDismissed_;
 
     SerialCommandHandler serial_;
