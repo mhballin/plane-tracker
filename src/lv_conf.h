@@ -23,10 +23,13 @@
    MEMORY SETTINGS
  *=========================*/
 
-/* Use standard C malloc/realloc/free — no fixed pool.
- * On ESP32-S3 with PSRAM, malloc() routes large allocations to PSRAM,
- * giving effectively unlimited headroom for widget trees. */
-#define LV_USE_STDLIB_MALLOC LV_STDLIB_CLIB
+/* PSRAM-backed allocator: forces ALL LVGL widget/style objects into PSRAM.
+ * malloc() on Arduino-ESP32 only routes allocations above
+ * CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL to PSRAM — LVGL's per-widget allocs
+ * (~100-200 bytes each) stay in SRAM and exhaust it during buildScreens(),
+ * leaving ~280 bytes for everything else including SSL connections.
+ * Implementation: src/lv_mem_psram.cpp */
+#define LV_USE_STDLIB_MALLOC LV_STDLIB_CUSTOM
 
 /* Number of the intermediate memory buffer used during rendering */
 #define LV_DRAW_BUF_STRIDE_ALIGN 1

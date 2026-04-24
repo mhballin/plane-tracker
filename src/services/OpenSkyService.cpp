@@ -2,6 +2,8 @@
 // Optimized OpenSky API service - faster and more reliable
 
 #include "OpenSkyService.h"
+#include <mbedtls/platform.h>
+#include <esp_heap_caps.h>
 using namespace Config;
 
 namespace {
@@ -168,13 +170,28 @@ bool OpenSkyService::fetchAccessToken() {
         return false;
     }
 
+    // Redirect mbedTLS allocations to PSRAM exactly once.
+    // Default mbedTLS buffers are 2×16KB = 32KB of contiguous SRAM, which fails
+    // (MBEDTLS_ERR_SSL_ALLOC_FAILED) after LVGL DMA buffers fragment the heap.
+    // PSRAM has 8MB free and needs no DMA capability for SSL record buffers.
+    static bool sslPsramInit = false;
+    if (!sslPsramInit) {
+        mbedtls_platform_set_calloc_free(
+            [](size_t n, size_t size) -> void* {
+                void* p = heap_caps_calloc(n, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+                return p ? p : calloc(n, size);  // fallback to SRAM if PSRAM full
+            },
+            free
+        );
+        sslPsramInit = true;
+        Serial.printf("[SSL] mbedTLS → PSRAM  heap: %lu B  max: %lu B\n",
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)ESP.getMaxAllocHeap());
+    }
+
     for (uint8_t attempt = 1; attempt <= MAX_AUTH_ATTEMPTS; ++attempt) {
         WiFiClientSecure client;
         client.setInsecure();
-        // Reduce SSL I/O buffers: default 16KB each → 8KB recv / 1KB send.
-        // Cuts per-connection SRAM from ~36KB to ~12KB — necessary on ESP32-S3
-        // after LVGL DMA allocation leaves the heap fragmented.
-        client.setBufferSizes(8192, 1024);
         HTTPClient http;
         http.begin(client, OPENSKY_TOKEN_ENDPOINT);
         http.setTimeout(HTTP_TIMEOUT_MS);
