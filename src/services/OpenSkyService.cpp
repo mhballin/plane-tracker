@@ -5,8 +5,9 @@
 using namespace Config;
 
 namespace {
+    constexpr uint8_t MAX_AUTH_ATTEMPTS = 1;   // auth server times out at 5s — don't retry and trash lwIP
     constexpr uint8_t MAX_HTTP_ATTEMPTS = 3;
-    constexpr uint16_t RETRY_DELAY_MS = 500; // base delay between retries (ms)
+    constexpr uint16_t RETRY_DELAY_MS = 500;
     constexpr uint16_t HTTP_TIMEOUT_MS = 12000;
 }
 
@@ -167,9 +168,15 @@ bool OpenSkyService::fetchAccessToken() {
         return false;
     }
 
-    for (uint8_t attempt = 1; attempt <= MAX_HTTP_ATTEMPTS; ++attempt) {
+    for (uint8_t attempt = 1; attempt <= MAX_AUTH_ATTEMPTS; ++attempt) {
+        WiFiClientSecure client;
+        client.setInsecure();
+        // Reduce SSL I/O buffers: default 16KB each → 8KB recv / 1KB send.
+        // Cuts per-connection SRAM from ~36KB to ~12KB — necessary on ESP32-S3
+        // after LVGL DMA allocation leaves the heap fragmented.
+        client.setBufferSizes(8192, 1024);
         HTTPClient http;
-        http.begin(OPENSKY_TOKEN_ENDPOINT);
+        http.begin(client, OPENSKY_TOKEN_ENDPOINT);
         http.setTimeout(HTTP_TIMEOUT_MS);
         http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
@@ -202,6 +209,7 @@ bool OpenSkyService::fetchAccessToken() {
         }
 
         http.end();
+        client.stop();
 
         if (success) {
             return true;
@@ -253,8 +261,10 @@ int OpenSkyService::fetchAircraft(Aircraft* aircraftList, int maxAircraft) {
     int aircraftCount = 0;
 
     for (uint8_t attempt = 1; attempt <= MAX_HTTP_ATTEMPTS; ++attempt) {
+        WiFiClientSecure client;
+        client.setInsecure();
         HTTPClient http;
-        http.begin(url);
+        http.begin(client, url);
         http.setTimeout(HTTP_TIMEOUT_MS);
 
         if (!accessToken.isEmpty()) {
@@ -267,6 +277,7 @@ int OpenSkyService::fetchAircraft(Aircraft* aircraftList, int maxAircraft) {
         if (httpCode == 200) {
             String payload = http.getString();
             http.end();
+            client.stop();
 
             JsonDocument doc;
             DeserializationError error = deserializeJson(doc, payload);
@@ -323,10 +334,11 @@ int OpenSkyService::fetchAircraft(Aircraft* aircraftList, int maxAircraft) {
             return aircraftCount;
         } else {
             lastError = String("OpenSky HTTP ") + httpCode;
-            Serial.printf("[OpenSky] ❌ HTTP %d\n", httpCode);
+            Serial.printf("[OpenSky] ❌ HTTP %d (%s)\n", httpCode, http.errorToString(httpCode).c_str());
         }
 
         http.end();
+        client.stop();
 
         if (attempt < MAX_HTTP_ATTEMPTS) {
             delay(RETRY_DELAY_MS * attempt);

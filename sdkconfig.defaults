@@ -1,0 +1,7 @@
+# Reduce mbedTLS I/O buffers to save SRAM.
+# Default is 16384 bytes each (32KB total per connection), which causes
+# MBEDTLS_ERR_SSL_ALLOC_FAILED on ESP32-S3 when heap is fragmented after
+# LVGL DMA buffer allocation. 8KB each = ~20KB total per connection —
+# fits in fragmented SRAM and is sufficient for OpenSky/OpenWeather TLS.
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=8192
+CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=8192

@@ -25,7 +25,10 @@ public:
 
 private:
     uint32_t lastReconnectAttemptMs_;
+    uint32_t lastDnsRefreshMs_;
     bool reconnectedFlag_;
+
+    void applyCloudfareDns();
 };
 
 }  // namespace core
