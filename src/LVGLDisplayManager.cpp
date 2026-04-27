@@ -144,14 +144,11 @@ LVGLDisplayManager::LVGLDisplayManager()
     , screen_home(nullptr)
     , screen_radar(nullptr)
     , currentScreen(SCREEN_HOME)
-    , lastScreenChange(0)
-    , lastUserInteraction(0)
     , statusMessage("")
     , statusClearTime(0)
-    , lastUpdateTime(0)
     , currentBrightness(255)
     , userDismissed_(false)
-    , list_selected_idx_(-1)
+    , userRequestedRadar_(false)
 {
     s_instance = this;
 }
@@ -232,7 +229,6 @@ bool LVGLDisplayManager::initHardware() {
     lv_indev_set_type(lv_indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(lv_indev, touchpad_read);
     lv_indev_set_disp(lv_indev, lv_display);
-    lv_indev_set_scroll_limit(lv_indev, 20);
 
     // Create the LVGL handler task now — internal SRAM is still plentiful here
     // (WiFi hasn't run yet).  Stack and TCB both require internal SRAM on this port.
@@ -255,7 +251,6 @@ bool LVGLDisplayManager::buildScreens() {
     build_radar_screen();
     lv_screen_load(screen_home);
     currentScreen = SCREEN_HOME;
-    lastUserInteraction = millis();
     lv_unlock();
     Serial.println("[LVGL] Screens built");
     return true;
@@ -292,7 +287,6 @@ void LVGLDisplayManager::touchpad_read(lv_indev_t* indev, lv_indev_data_t* data)
         data->state = LV_INDEV_STATE_PRESSED;
         data->point.x = x;
         data->point.y = y;
-        s_instance->lastUserInteraction = millis();
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
     }
@@ -587,6 +581,7 @@ void LVGLDisplayManager::updateWeatherWidgets(WeatherWidgets& w,
 
 void LVGLDisplayManager::build_home_screen() {
     screen_home = lv_obj_create(NULL);
+    lv_obj_clear_flag(screen_home, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(screen_home, COLOR_BG, 0);
     lv_obj_set_style_bg_opa(screen_home, LV_OPA_COVER, 0);
 
@@ -653,15 +648,6 @@ void LVGLDisplayManager::buildAirspacePanel(lv_obj_t* parent) {
     lv_obj_set_style_clip_corner(airspace_circle_, true, 0);
     lv_obj_clear_flag(airspace_circle_, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
 
-    // Home dot (center, dim)
-    lv_obj_t* home = lv_obj_create(airspace_circle_);
-    lv_obj_set_size(home, 6, 6);
-    lv_obj_center(home);
-    lv_obj_set_style_radius(home, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(home, COLOR_TEXT_DIM, 0);
-    lv_obj_set_style_border_width(home, 0, 0);
-    lv_obj_clear_flag(home, LV_OBJ_FLAG_CLICKABLE);
-
     // Project coastline to pixel coords (120px radius for 240px circle)
     for (int i = 0; i < GeoUtils::COASTLINE_PORTLAND_LEN; i++) {
         auto p = GeoUtils::latLonToRadarPx(
@@ -689,11 +675,16 @@ void LVGLDisplayManager::buildAirspacePanel(lv_obj_t* parent) {
     lv_obj_set_style_text_color(label_airspace_sub_, COLOR_TEXT_DIM, 0);
     lv_label_set_text(label_airspace_sub_, "No aircraft within 25nm");
     lv_obj_set_pos(label_airspace_sub_, 10, 318);
+
+    // Tapping anywhere on the airspace panel navigates to radar
+    lv_obj_add_flag(parent, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(parent, event_show_radar, LV_EVENT_CLICKED, this);
 }
 
 void LVGLDisplayManager::build_radar_screen() {
     if (screen_radar) return;  // already built — prevent leak on re-init
     screen_radar = lv_obj_create(NULL);
+    lv_obj_clear_flag(screen_radar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(screen_radar, COLOR_BG, 0);
     lv_obj_set_style_bg_opa(screen_radar, LV_OPA_COVER, 0);
 
@@ -708,7 +699,6 @@ void LVGLDisplayManager::build_radar_screen() {
     lv_obj_set_style_radius(topbar, 0, 0);
     lv_obj_set_style_pad_all(topbar, 0, 0);
     lv_obj_clear_flag(topbar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(topbar, event_topbar_back, LV_EVENT_CLICKED, this);
 
     label_radar_time_ = lv_label_create(topbar);
     lv_obj_set_style_text_font(label_radar_time_, &lv_font_montserrat_22, 0);
@@ -728,11 +718,25 @@ void LVGLDisplayManager::build_radar_screen() {
     lv_label_set_text(label_radar_count_, LV_SYMBOL_BULLET " 0 AIRCRAFT NEARBY");
     lv_obj_align(label_radar_count_, LV_ALIGN_CENTER, 0, 0);
 
-    lv_obj_t* hint = lv_label_create(topbar);
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(hint, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(hint, "tap bar " LV_SYMBOL_LEFT " home");
-    lv_obj_align(hint, LV_ALIGN_RIGHT_MID, -16, 0);
+    // Back button: bordered, clearly tappable
+    lv_obj_t* back_btn = lv_obj_create(topbar);
+    lv_obj_set_size(back_btn, 90, 34);
+    lv_obj_align(back_btn, LV_ALIGN_RIGHT_MID, -12, 0);
+    lv_obj_set_style_bg_color(back_btn, COLOR_INSET, 0);
+    lv_obj_set_style_bg_opa(back_btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(back_btn, COLOR_ACCENT, 0);
+    lv_obj_set_style_border_opa(back_btn, 100, 0);
+    lv_obj_set_style_border_width(back_btn, 1, 0);
+    lv_obj_set_style_radius(back_btn, 4, 0);
+    lv_obj_set_style_pad_all(back_btn, 0, 0);
+    lv_obj_clear_flag(back_btn, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(back_btn, event_topbar_back, LV_EVENT_CLICKED, this);
+
+    lv_obj_t* back_lbl = lv_label_create(back_btn);
+    lv_obj_set_style_text_font(back_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(back_lbl, COLOR_TEXT_SECONDARY, 0);
+    lv_label_set_text(back_lbl, LV_SYMBOL_LEFT " HOME");
+    lv_obj_center(back_lbl);
 
     // === BODY ===
     lv_obj_t* body = lv_obj_create(screen_radar);
@@ -809,44 +813,24 @@ void LVGLDisplayManager::build_radar_screen() {
     lv_obj_set_style_line_width(radar_coastline_, 2, 0);
     lv_obj_set_style_line_opa(radar_coastline_, LV_OPA_COVER, 0);
 
-    // PWM airport marker: + cross
-    auto pwm = GeoUtils::latLonToRadarPx(
-        Config::HOME_LAT, Config::HOME_LON,
-        Config::PWM_LAT, Config::PWM_LON,
-        Config::RADAR_MAX_RANGE_NM, Config::RADAR_CIRCLE_RADIUS);
-    // static: must outlive the lv_line objects that reference them
-    static lv_point_precise_t pwm_h[2], pwm_v[2];
-    pwm_h[0] = {(lv_value_precise_t)(pwm.x - 7), (lv_value_precise_t)pwm.y};
-    pwm_h[1] = {(lv_value_precise_t)(pwm.x + 7), (lv_value_precise_t)pwm.y};
-    pwm_v[0] = {(lv_value_precise_t)pwm.x, (lv_value_precise_t)(pwm.y - 7)};
-    pwm_v[1] = {(lv_value_precise_t)pwm.x, (lv_value_precise_t)(pwm.y + 7)};
+    // PWM airport marker: small amber dot (subtle reference, no label)
+    {
+        auto pwm = GeoUtils::latLonToRadarPx(
+            Config::HOME_LAT, Config::HOME_LON,
+            Config::PWM_LAT, Config::PWM_LON,
+            Config::RADAR_MAX_RANGE_NM, Config::RADAR_CIRCLE_RADIUS);
+        lv_obj_t* pwm_dot = lv_obj_create(radar_circle_);
+        lv_obj_set_size(pwm_dot, 6, 6);
+        lv_obj_set_pos(pwm_dot, pwm.x - 3, pwm.y - 3);
+        lv_obj_set_style_radius(pwm_dot, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(pwm_dot, COLOR_AMBER, 0);
+        lv_obj_set_style_bg_opa(pwm_dot, 180, 0);
+        lv_obj_set_style_border_width(pwm_dot, 0, 0);
+        lv_obj_clear_flag(pwm_dot, LV_OBJ_FLAG_CLICKABLE);
+    }
 
-    lv_obj_t* ph = lv_line_create(radar_circle_);
-    lv_line_set_points(ph, pwm_h, 2);
-    lv_obj_set_style_line_color(ph, COLOR_AMBER, 0);
-    lv_obj_set_style_line_width(ph, 2, 0);
-
-    lv_obj_t* pv = lv_line_create(radar_circle_);
-    lv_line_set_points(pv, pwm_v, 2);
-    lv_obj_set_style_line_color(pv, COLOR_AMBER, 0);
-    lv_obj_set_style_line_width(pv, 2, 0);
-
-    lv_obj_t* pwm_lbl = lv_label_create(radar_circle_);
-    lv_obj_set_style_text_font(pwm_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(pwm_lbl, COLOR_AMBER, 0);
-    lv_label_set_text(pwm_lbl, "PWM");
-    lv_obj_set_pos(pwm_lbl, pwm.x + 9, pwm.y - 8);
-
-    // Home dot (center, 10px cyan)
-    lv_obj_t* home_dot = lv_obj_create(radar_circle_);
-    lv_obj_set_size(home_dot, 10, 10);
-    lv_obj_center(home_dot);
-    lv_obj_set_style_radius(home_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(home_dot, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_width(home_dot, 0, 0);
-    lv_obj_clear_flag(home_dot, LV_OBJ_FLAG_CLICKABLE);
-
-    // Range labels (near N cardinal, inside circle edge) — lv_font_montserrat_10 not enabled; use _12
+    // Range labels (inside circle edge, near N/S axis) — use radar_col as parent so they
+    // render on top of the circle without being clipped by its circular mask
     lv_obj_t* rl1 = lv_label_create(radar_col);
     lv_obj_set_style_text_font(rl1, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(rl1, COLOR_TEXT_DIM, 0);
@@ -923,7 +907,7 @@ void LVGLDisplayManager::build_radar_screen() {
     lv_obj_set_style_border_width(ldiv, 0, 0);
     lv_obj_clear_flag(ldiv, LV_OBJ_FLAG_CLICKABLE);
 
-    // Scrollable list container
+    // Aircraft list container
     list_container_ = lv_obj_create(list_col);
     lv_obj_set_size(list_container_, 310, 362);
     lv_obj_set_pos(list_container_, 0, 30);
@@ -936,6 +920,7 @@ void LVGLDisplayManager::build_radar_screen() {
     lv_obj_set_flex_align(list_container_, LV_FLEX_ALIGN_START,
                            LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_row(list_container_, 0, 0);
+    lv_obj_clear_flag(list_container_, LV_OBJ_FLAG_SCROLLABLE);
 
     // Pre-allocate rows
     for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
@@ -943,7 +928,7 @@ void LVGLDisplayManager::build_radar_screen() {
 
         row.container = lv_obj_create(list_container_);
         lv_obj_set_width(row.container, 310);
-        lv_obj_set_height(row.container, 66);
+        lv_obj_set_height(row.container, 84);
         lv_obj_set_style_bg_color(row.container, COLOR_PANEL, 0);
         lv_obj_set_style_bg_opa(row.container, LV_OPA_COVER, 0);
         lv_obj_set_style_border_side(row.container, LV_BORDER_SIDE_BOTTOM, 0);
@@ -951,38 +936,45 @@ void LVGLDisplayManager::build_radar_screen() {
         lv_obj_set_style_border_width(row.container, 1, 0);
         lv_obj_set_style_radius(row.container, 0, 0);
         lv_obj_set_style_pad_all(row.container, 0, 0);
-        lv_obj_clear_flag(row.container, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_flag(row.container, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(row.container, event_list_row_clicked,
-                            LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        lv_obj_clear_flag(row.container, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
         lv_obj_add_flag(row.container, LV_OBJ_FLAG_HIDDEN);
 
         // Left accent bar (4px wide)
         row.accent_bar = lv_obj_create(row.container);
-        lv_obj_set_size(row.accent_bar, 4, 66);
+        lv_obj_set_size(row.accent_bar, 4, 84);
         lv_obj_set_pos(row.accent_bar, 0, 0);
         lv_obj_set_style_bg_color(row.accent_bar, COLOR_ACCENT, 0);
         lv_obj_set_style_border_width(row.accent_bar, 0, 0);
         lv_obj_set_style_radius(row.accent_bar, 0, 0);
         lv_obj_clear_flag(row.accent_bar, LV_OBJ_FLAG_CLICKABLE);
 
+        // Airline name (primary — biggest text in row)
         row.label_callsign = lv_label_create(row.container);
         lv_obj_set_style_text_font(row.label_callsign, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(row.label_callsign, COLOR_ACCENT, 0);
         lv_label_set_text(row.label_callsign, "------");
         lv_obj_set_pos(row.label_callsign, 14, 8);
 
+        // Route line: "CITY, CC → CITY, CC · CALLSIGN"
         row.label_type_route = lv_label_create(row.container);
         lv_obj_set_style_text_font(row.label_type_route, &lv_font_montserrat_12, 0);
         lv_obj_set_style_text_color(row.label_type_route, COLOR_TEXT_SECONDARY, 0);
         lv_label_set_text(row.label_type_route, "");
         lv_obj_set_pos(row.label_type_route, 14, 30);
 
+        // Aircraft type (one step up from before — 14px)
+        row.label_type = lv_label_create(row.container);
+        lv_obj_set_style_text_font(row.label_type, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(row.label_type, COLOR_TEXT_DIM, 0);
+        lv_label_set_text(row.label_type, "");
+        lv_obj_set_pos(row.label_type, 14, 48);
+
+        // Stats line: alt / speed / bearing / distance
         row.label_summary = lv_label_create(row.container);
         lv_obj_set_style_text_font(row.label_summary, &lv_font_montserrat_12, 0);
         lv_obj_set_style_text_color(row.label_summary, COLOR_TEXT_DIM, 0);
         lv_label_set_text(row.label_summary, "");
-        lv_obj_set_pos(row.label_summary, 14, 48);
+        lv_obj_set_pos(row.label_summary, 14, 65);
 
         // Expanded panel intentionally not pre-allocated — too many style objects
         // for the LVGL pool across MAX_AIRCRAFT rows. All key data shown in label_summary.
@@ -1006,12 +998,6 @@ void LVGLDisplayManager::build_radar_screen() {
     lv_label_set_text(sbar_left, "OPENSKY OK");
     lv_obj_align(sbar_left, LV_ALIGN_LEFT_MID, 12, 0);
 
-    lv_obj_t* sbar_hint = lv_label_create(sbar);
-    lv_obj_set_style_text_font(sbar_hint, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(sbar_hint, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(sbar_hint, "tap top bar to return home");
-    lv_obj_align(sbar_hint, LV_ALIGN_CENTER, 0, 0);
-
     lv_obj_t* sbar_live = lv_label_create(sbar);
     lv_obj_set_style_text_font(sbar_live, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(sbar_live, COLOR_SUCCESS, 0);
@@ -1028,10 +1014,10 @@ void LVGLDisplayManager::update_home_screen(const WeatherData& weather,
 
     if (aircraftCount > 0) {
         char buf[40];
-        snprintf(buf, sizeof(buf), LV_SYMBOL_BULLET " %d AIRCRAFT NEARBY", aircraftCount);
+        snprintf(buf, sizeof(buf), "%d AIRCRAFT NEARBY", aircraftCount);
         lv_obj_set_style_text_color(label_airspace_status_, COLOR_AMBER, 0);
         lv_label_set_text(label_airspace_status_, buf);
-        lv_label_set_text(label_airspace_sub_, "Switching to radar...");
+        lv_label_set_text(label_airspace_sub_, "");
     } else {
         lv_obj_set_style_text_color(label_airspace_status_, COLOR_SUCCESS, 0);
         lv_label_set_text(label_airspace_status_, LV_SYMBOL_BULLET " AIRSPACE CLEAR");
@@ -1087,27 +1073,6 @@ void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
         lv_label_set_text(label_list_header_, hb);
     }
 
-    // If selected aircraft left range, reset selection to row 0 (or -1 if empty)
-    if (list_selected_idx_ >= aircraftCount) {
-        if (list_selected_idx_ >= 0 && list_selected_idx_ < Config::MAX_AIRCRAFT) {
-            if (list_rows_[list_selected_idx_].expanded_panel)
-                lv_obj_add_flag(list_rows_[list_selected_idx_].expanded_panel, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_height(list_rows_[list_selected_idx_].container, 66);
-        }
-        list_selected_idx_ = (aircraftCount > 0) ? 0 : -1;
-        if (list_selected_idx_ == 0) {
-            if (list_rows_[0].expanded_panel)
-                lv_obj_remove_flag(list_rows_[0].expanded_panel, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-
-    // Auto-expand row 0 on first entry (no prior selection)
-    if (aircraftCount > 0 && list_selected_idx_ < 0) {
-        list_selected_idx_ = 0;
-        if (list_rows_[0].expanded_panel)
-            lv_obj_remove_flag(list_rows_[0].expanded_panel, LV_OBJ_FLAG_HIDDEN);
-    }
-
     for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
         RadarBlip&       blip = radar_blips_[i];
         AircraftListRow& row  = list_rows_[i];
@@ -1152,80 +1117,37 @@ void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
             lv_obj_set_pos(blip.label, pos.x + 10, pos.y - 8);
             lv_obj_remove_flag(blip.label, LV_OBJ_FLAG_HIDDEN);
 
-            // Selection ring (shown on selected blip)
-            if (i == list_selected_idx_) {
-                lv_obj_set_style_border_color(blip.dot, COLOR_TEXT_PRIMARY, 0);
-                lv_obj_set_style_border_width(blip.dot, 2, 0);
-                lv_obj_set_style_border_opa(blip.dot, 160, 0);
-            } else {
-                lv_obj_set_style_border_width(blip.dot, 0, 0);
-            }
-
             // --- List row ---
             lv_obj_remove_flag(row.container, LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_style_bg_color(row.accent_bar, blipColor, 0);
             lv_obj_set_style_text_color(row.label_callsign, blipColor, 0);
-            lv_label_set_text(row.label_callsign, a.callsign.c_str());
 
-            // Type · route
-            char tr[64];
-            if (!a.aircraftType.isEmpty() && !a.origin.isEmpty() && !a.destination.isEmpty()) {
-                snprintf(tr, sizeof(tr), "%s  |  %s " LV_SYMBOL_RIGHT " %s",
-                         a.aircraftType.c_str(), a.origin.c_str(), a.destination.c_str());
-            } else if (!a.origin.isEmpty() && !a.destination.isEmpty()) {
-                snprintf(tr, sizeof(tr), "%s " LV_SYMBOL_RIGHT " %s",
-                         a.origin.c_str(), a.destination.c_str());
-            } else if (!a.aircraftType.isEmpty()) {
-                snprintf(tr, sizeof(tr), "%s", a.aircraftType.c_str());
+            // Airline name (primary) — fall back to callsign if lookup not yet done
+            lv_label_set_text(row.label_callsign,
+                a.airline.isEmpty() ? a.callsign.c_str() : a.airline.c_str());
+
+            // Route line: "CITY, CC → CITY, CC · CALLSIGN"
+            char tr[96];
+            const String& org = a.originDisplay.isEmpty()      ? a.origin      : a.originDisplay;
+            const String& dst = a.destinationDisplay.isEmpty() ? a.destination : a.destinationDisplay;
+            if (!org.isEmpty() && !dst.isEmpty()) {
+                snprintf(tr, sizeof(tr), "%s > %s  /  %s",
+                         org.c_str(), dst.c_str(), a.callsign.c_str());
             } else {
-                snprintf(tr, sizeof(tr), "Unknown type");
+                snprintf(tr, sizeof(tr), "%s", a.callsign.c_str());
             }
             lv_label_set_text(row.label_type_route, tr);
 
-            // Summary line (collapsed)
-            char sm[80];
+            // Aircraft type
+            lv_label_set_text(row.label_type,
+                a.aircraftType.isEmpty() ? "" : a.aircraftType.c_str());
+
+            // Stats line
             float speedKt = a.velocity * 1.94384f;
-            snprintf(sm, sizeof(sm), "%.0f ft  |  %.0f kt  |  %s  |  %.1f nm",
+            char sm[80];
+            snprintf(sm, sizeof(sm), "%.0f ft / %.0f kt / %s / %.1f nm",
                      altFt, speedKt, GeoUtils::cardinalDir(bearing), distNm);
             lv_label_set_text(row.label_summary, sm);
-
-            // Expanded fields (only if pre-allocated)
-            if (row.label_alt) {
-                char buf[32];
-                snprintf(buf, sizeof(buf), "%.0f ft", altFt);
-                lv_label_set_text(row.label_alt, buf);
-
-                snprintf(buf, sizeof(buf), "%.0f kt", speedKt);
-                lv_label_set_text(row.label_speed, buf);
-
-                snprintf(buf, sizeof(buf), "%.0f\xc2\xb0 %s",
-                         a.heading, GeoUtils::cardinalDir(a.heading));
-                lv_label_set_text(row.label_hdg, buf);
-
-                snprintf(buf, sizeof(buf), "%.1f nm %s",
-                         distNm, GeoUtils::cardinalDir(bearing));
-                lv_label_set_text(row.label_dist, buf);
-
-                float distToPwmNm = GeoUtils::distanceNm(Config::PWM_LAT, Config::PWM_LON,
-                                                           a.latitude, a.longitude);
-                float bearingToPwm = GeoUtils::bearingDeg(a.latitude, a.longitude,
-                                                           Config::PWM_LAT, Config::PWM_LON);
-                float hdgDiff = fabsf(fmodf(a.heading - bearingToPwm + 360.0f, 360.0f));
-                if (hdgDiff > 180.0f) hdgDiff = 360.0f - hdgDiff;
-
-                const char* statusTxt;
-                if (altFt >= 5000.0f) {
-                    statusTxt = "CRUISING";
-                } else if (distToPwmNm < 15.0f && hdgDiff < 30.0f) {
-                    statusTxt = "ON APPROACH";
-                } else if (distToPwmNm < 15.0f) {
-                    statusTxt = "DEPARTING";
-                } else {
-                    statusTxt = "LOW / OVERFLYING";
-                }
-                lv_obj_set_style_text_color(row.label_status, blipColor, 0);
-                lv_label_set_text(row.label_status, statusTxt);
-            }
 
         } else {
             // Hide blip and row
@@ -1261,25 +1183,15 @@ void LVGLDisplayManager::setScreen(ScreenState screen) {
     switch (screen) {
         case SCREEN_HOME:
             currentScreen = screen;
-            lastScreenChange = millis();
             if (screen_home) lv_screen_load_anim(screen_home, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
             break;
         case SCREEN_RADAR:
-            if (!screen_radar) { lv_unlock(); return; }  // not built yet — stay on current screen
+            if (!screen_radar) { lv_unlock(); return; }
             currentScreen = screen;
-            lastScreenChange = millis();
             lv_screen_load_anim(screen_radar, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
             break;
     }
     lv_unlock();
-}
-
-// Check if should return to home
-bool LVGLDisplayManager::shouldReturnToHome() {
-    if (currentScreen == SCREEN_HOME) return false;
-    
-    unsigned long idleTime = millis() - lastUserInteraction;
-    return idleTime >= Config::UI_AUTO_HOME_MS;
 }
 
 bool LVGLDisplayManager::wasUserDismissed() {
@@ -1317,13 +1229,6 @@ void LVGLDisplayManager::setBrightness(uint8_t brightness) {
     lv_unlock();
 }
 
-// Timestamp tracking
-void LVGLDisplayManager::setLastUpdateTimestamp(time_t timestamp) {
-    lv_lock();
-    lastUpdateTime = timestamp;
-    lv_unlock();
-}
-
 void LVGLDisplayManager::setStatusMessage(const String& msg) {
     lv_lock();
     statusMessage = msg;
@@ -1332,59 +1237,22 @@ void LVGLDisplayManager::setStatusMessage(const String& msg) {
     lv_unlock();
 }
 
-// Event callbacks — registered in Task 6/8
-void LVGLDisplayManager::event_list_row_clicked(lv_event_t* e) {
-    int idx = (int)(intptr_t)lv_event_get_user_data(e);
-    if (s_instance) s_instance->onListRowClicked(idx);
-}
-
-void LVGLDisplayManager::onListRowClicked(int idx) {
-    if (idx < 0 || idx >= Config::MAX_AIRCRAFT) return;
-    if (!list_rows_[idx].container) return;
-
-    if (list_selected_idx_ == idx) {
-        // Tap currently selected row → collapse
-        if (list_rows_[idx].expanded_panel)
-            lv_obj_add_flag(list_rows_[idx].expanded_panel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_height(list_rows_[idx].container, 66);
-        list_selected_idx_ = -1;
-        if (radar_blips_[idx].dot)
-            lv_obj_set_style_border_width(radar_blips_[idx].dot, 0, 0);
-        return;
-    }
-
-    // Collapse previously selected
-    if (list_selected_idx_ >= 0 && list_selected_idx_ < Config::MAX_AIRCRAFT) {
-        int prev = list_selected_idx_;
-        if (list_rows_[prev].expanded_panel)
-            lv_obj_add_flag(list_rows_[prev].expanded_panel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_height(list_rows_[prev].container, 66);
-        if (radar_blips_[prev].dot)
-            lv_obj_set_style_border_width(radar_blips_[prev].dot, 0, 0);
-    }
-
-    // Expand new row
-    if (list_rows_[idx].expanded_panel)
-        lv_obj_remove_flag(list_rows_[idx].expanded_panel, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_height(list_rows_[idx].container, 66);  // no expanded panel, keep height
-    list_selected_idx_ = idx;
-
-    // Highlight corresponding radar blip
-    if (radar_blips_[idx].dot) {
-        lv_obj_set_style_border_color(radar_blips_[idx].dot, COLOR_TEXT_PRIMARY, 0);
-        lv_obj_set_style_border_width(radar_blips_[idx].dot, 2, 0);
-        lv_obj_set_style_border_opa(radar_blips_[idx].dot, 160, 0);
-    }
-}
-
 void LVGLDisplayManager::event_topbar_back(lv_event_t* e) {
     (void)e;
     if (s_instance) s_instance->userDismissed_ = true;
 }
 
-// Touch processing (LVGL handles this automatically)
-void LVGLDisplayManager::processTouch() {
-    // LVGL handles touch automatically via touchpad_read callback
+void LVGLDisplayManager::event_show_radar(lv_event_t* e) {
+    (void)e;
+    if (s_instance) s_instance->userRequestedRadar_ = true;
+}
+
+bool LVGLDisplayManager::wasUserRequestedRadar() {
+    lv_lock();
+    bool result = userRequestedRadar_;
+    userRequestedRadar_ = false;
+    lv_unlock();
+    return result;
 }
 
 lgfx::LGFX_Device* LVGLDisplayManager::getLCD() {

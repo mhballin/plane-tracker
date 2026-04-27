@@ -11,6 +11,41 @@ static constexpr char NVS_NS[] = "route_cache";
 
 RouteCache::RouteCache() {}
 
+bool RouteCache::lookupType(const String& icao24, String& typeOut) {
+    if (icao24.isEmpty()) return false;
+
+    String url = String("https://hexdb.io/api/v1/aircraft/") + icao24;
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient http;
+    http.begin(client, url);
+    http.setTimeout(8000);
+
+    Serial.printf("[RouteCache] hexdb type GET %s\n", url.c_str());
+    int code = http.GET();
+    if (code != 200) {
+        Serial.printf("[RouteCache] hexdb type HTTP %d\n", code);
+        http.end();
+        return false;
+    }
+
+    String payload = http.getString();
+    http.end();
+
+    JsonDocument doc;
+    if (deserializeJson(doc, payload)) return false;
+
+    String mfr  = doc["Manufacturer"].as<String>();
+    String type = doc["Type"].as<String>();
+
+    if (mfr.isEmpty() || mfr == "null") return false;
+
+    typeOut = type.isEmpty() || type == "null" ? mfr : mfr + " " + type;
+    Serial.printf("[RouteCache] type: %s\n", typeOut.c_str());
+    return true;
+}
+
 String RouteCache::toIataFlightNumber(const String& callsign) {
     if (callsign.length() < 4) return "";
     String prefix = callsign.substring(0, 3);

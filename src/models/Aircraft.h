@@ -23,10 +23,11 @@ public:
     bool onGround;
     bool valid;
     bool routeLookupDone;   // true once a lookup attempt has completed (success or fail)
+    bool typeLookupDone;    // true once aircraft type lookup has completed
 
     Aircraft() :
         latitude(0), longitude(0), altitude(0),
         velocity(0), heading(0), verticalRate(0),
         squawk(""),
-        onGround(false), valid(false), routeLookupDone(false) {}
+        onGround(false), valid(false), routeLookupDone(false), typeLookupDone(false) {}
 };

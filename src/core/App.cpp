@@ -122,12 +122,13 @@ void App::tick() {
     }
 
     if (display_) {
-        display_->processTouch();
-    }
-
-    if (display_) {
         if (display_->wasUserDismissed()) {
             aircraftDismissed_ = true;
+            display_->setScreen(LVGLDisplayManager::SCREEN_HOME);
+        }
+
+        if (display_->wasUserRequestedRadar()) {
+            display_->setScreen(LVGLDisplayManager::SCREEN_RADAR);
         }
 
         // Reset dismissed flag once the sky clears
@@ -188,12 +189,10 @@ void App::updateWeather() {
     }
 
     if (weatherService_->getWeather(currentWeather_)) {
-        time_t nowTs = time(nullptr);
         if (display_) {
-            display_->setLastUpdateTimestamp(nowTs);
             display_->setStatusMessage("Weather updated");
         }
-        health_.markWeatherSuccess(nowTs);
+        health_.markWeatherSuccess(time(nullptr));
         health_.setStatusMessage("Weather OK");
     } else {
         String err = weatherService_->getLastError();
@@ -239,17 +238,31 @@ void App::updateDisplay() {
         if (routeCache_ && wifiManager_.isConnected()) {
             for (int i = 0; i < currentAircraftCount_; i++) {
                 Aircraft& a = aircraftList_[i];
-                if (!a.valid || a.callsign.isEmpty() || a.routeLookupDone) continue;
-                String org, dst, orgCity, orgCountry, dstCity, dstCountry;
-                if (routeCache_->lookup(a.callsign, org, dst, orgCity, orgCountry,
-                                        dstCity, dstCountry)) {
-                    a.origin             = org;
-                    a.destination        = dst;
-                    a.originDisplay      = orgCity.isEmpty() ? org : orgCity;
-                    a.destinationDisplay = dstCity.isEmpty() ? dst : dstCity;
+                if (!a.valid || a.callsign.isEmpty()) continue;
+
+                if (!a.routeLookupDone) {
+                    String org, dst, orgCity, orgCountry, dstCity, dstCountry;
+                    if (routeCache_->lookup(a.callsign, org, dst, orgCity, orgCountry,
+                                            dstCity, dstCountry)) {
+                        a.origin             = org;
+                        a.destination        = dst;
+                        a.originDisplay      = orgCity.isEmpty() ? org
+                                             : (orgCountry.isEmpty() ? orgCity : orgCity + ", " + orgCountry);
+                        a.destinationDisplay = dstCity.isEmpty() ? dst
+                                             : (dstCountry.isEmpty() ? dstCity : dstCity + ", " + dstCountry);
+                    }
+                    a.routeLookupDone = true;
+                    break;
                 }
-                a.routeLookupDone = true;
-                break;  // one lookup per update cycle — don't block the main loop
+
+                if (!a.typeLookupDone && !a.icao24.isEmpty()) {
+                    String typeStr;
+                    if (routeCache_->lookupType(a.icao24, typeStr)) {
+                        a.aircraftType = typeStr;
+                    }
+                    a.typeLookupDone = true;
+                    break;
+                }
             }
         }
         display_->update(currentWeather_, aircraftList_, currentAircraftCount_);

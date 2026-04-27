@@ -10,6 +10,10 @@ class RouteCache {
 public:
     RouteCache();
 
+    /// Look up aircraft manufacturer+type by ICAO hex (icao24) via hexdb.io.
+    /// Returns true and populates typeOut (e.g. "Boeing 737-800") on success.
+    bool lookupType(const String& icao24, String& typeOut);
+
     /// Check NVS, then try hexdb.io → adsbdb → AeroDataBox.
     /// Returns true and populates all fields on success.
     /// origin/destination are IATA codes; city/country are human-readable.

@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Plane Tracker — Display Mock (800×480)</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0a0a0a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 0 40px;
+  min-height: 100vh;
+  font-family: 'Montserrat', sans-serif;
+}
+.controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 18px;
+  align-items: center;
+}
+.controls button {
+  background: transparent;
+  border: 1px solid #1e3a54;
+  color: #2a5070;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 7px 20px;
+  cursor: pointer;
+  border-radius: 2px;
+  letter-spacing: 2px;
+  transition: all 0.12s;
+  text-transform: uppercase;
+}
+.controls button:hover { border-color: #00d4ff80; color: #5a8aaa; }
+.controls button.active { background: #00d4ff18; border-color: #00d4ff; color: #00d4ff; }
+.controls .sep { width: 1px; height: 24px; background: #1e3a54; margin: 0 4px; }
+.display {
+  width: 800px;
+  height: 480px;
+  position: relative;
+  overflow: hidden;
+  background: #0e1726;
+  font-family: 'Montserrat', sans-serif;
+  user-select: none;
+  box-shadow: 0 0 0 1px #1e3a54, 0 8px 60px #00000080;
+}
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <button class="active" id="btn-home"  onclick="showScreen('home')">Home Screen</button>
+  <div class="sep"></div>
+  <button id="btn-radar" onclick="showScreen('radar')">Radar Screen</button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     HOME SCREEN  800 × 480
+     Layout: topbar(58) + body(396) + statusbar(26) = 480
+     Body: weather-col(490) | airspace-panel(310)
+══════════════════════════════════════════════════════════ -->
+<div class="display" id="screen-home">
+
+  <!-- TOP BAR ─ 800×58 ─────────────────────────────────── -->
+  <div style="position:absolute;top:0;left:0;width:800px;height:58px;
+              background:#101f33;border-bottom:1px solid #1e3a54;overflow:hidden;">
+    <!-- Time: large cyan, left -->
+    <span style="position:absolute;left:20px;top:6px;
+                 font-size:28px;font-weight:700;color:#00d4ff;line-height:1;letter-spacing:-0.5px;">
+      10:42 AM
+    </span>
+    <!-- Date: secondary, below time -->
+    <span style="position:absolute;left:20px;top:38px;
+                 font-size:12px;font-weight:500;color:#5a8aaa;letter-spacing:0.3px;">
+      Sun, Apr 27
+    </span>
+    <!-- Location: dim, right -->
+    <span style="position:absolute;right:20px;top:50%;transform:translateY(-50%);
+                 font-size:12px;color:#2a5070;letter-spacing:0.3px;">
+      Portland, ME
+    </span>
+  </div>
+
+  <!-- BODY ─ 800×396 at y=58 ───────────────────────────── -->
+  <div style="position:absolute;top:58px;left:0;width:800px;height:396px;display:flex;">
+
+    <!-- ── WEATHER COLUMN ─ 490×396 ── -->
+    <div style="flex:1;height:396px;position:relative;overflow:hidden;">
+      <!--
+        Inside: pad container with pad_hor=16, pad_ver=12.
+        All widget positions below are absolute from the column's top-left
+        with the padding offset already added (pos(x,y) → left:x+16, top:y+12).
+      -->
+
+      <!-- Temperature: pos(0,0) → (16,12) -->
+      <span style="position:absolute;left:16px;top:12px;
+                   font-size:48px;font-weight:700;color:#eaf6ff;line-height:1;">52°F</span>
+
+      <!-- Condition: pos(110,4) → (126,16) -->
+      <span style="position:absolute;left:126px;top:16px;
+                   font-size:14px;color:#5a8aaa;">Light Rain</span>
+
+      <!-- Feels like: pos(110,24) → (126,36) -->
+      <span style="position:absolute;left:126px;top:36px;
+                   font-size:12px;color:#2a5070;">Feels: 48°F</span>
+
+      <!-- Hi/Lo: pos(110,42) → (126,54) -->
+      <span style="position:absolute;left:126px;top:54px;
+                   font-size:12px;color:#2a5070;">H: 55°  L: 44°</span>
+
+      <!-- Details strip: pos(0,68) → (16,80), width=458, height=36 -->
+      <div style="position:absolute;left:16px;top:80px;width:458px;height:36px;
+                  border-top:1px solid #1e3a54;border-bottom:1px solid #1e3a54;">
+        <!-- WIND header at strip(0,4) -->
+        <span style="position:absolute;left:0;top:4px;font-size:11px;color:#2a5070;letter-spacing:0.8px;">WIND</span>
+        <!-- Wind value at strip(0,18) -->
+        <span style="position:absolute;left:0;top:18px;font-size:13px;font-weight:600;color:#eaf6ff;">12 mph</span>
+        <!-- HUMIDITY header at strip(90,4) -->
+        <span style="position:absolute;left:90px;top:4px;font-size:11px;color:#2a5070;letter-spacing:0.8px;">HUMIDITY</span>
+        <!-- Humidity value at strip(90,18) -->
+        <span style="position:absolute;left:90px;top:18px;font-size:13px;font-weight:600;color:#eaf6ff;">78%</span>
+        <!-- Sunrise: RIGHT_MID -70 → right edge at (strip_width - 70) -->
+        <span style="position:absolute;right:70px;top:50%;transform:translateY(-50%);
+                     font-size:13px;color:#f59e0b;">↑ 05:24</span>
+        <!-- Sunset: RIGHT_MID 0 → flush right -->
+        <span style="position:absolute;right:0;top:50%;transform:translateY(-50%);
+                     font-size:13px;color:#f59e0b;">↓ 19:37</span>
+      </div>
+
+      <!-- 5-DAY FORECAST header: pos(0,112) → (16,124) -->
+      <span style="position:absolute;left:16px;top:124px;
+                   font-size:11px;color:#2a5070;letter-spacing:1.5px;">5-DAY FORECAST</span>
+
+      <!-- Forecast rows: pos(0, 130+i*46) → top = 12+130+i*46, left=16, width=458, height=40 -->
+      <!-- Row 0 Mon: top=142 -->
+      <div style="position:absolute;left:16px;top:142px;width:458px;height:40px;
+                  background:#0a1428;border:1px solid #1e3a54;border-radius:4px;
+                  display:flex;align-items:center;padding:0 10px;">
+        <span style="font-size:12px;color:#5a8aaa;width:48px;flex-shrink:0;">Mon</span>
+        <span style="font-size:11px;color:#2a5070;flex:1;text-align:center;">Partly Cloudy</span>
+        <span style="font-size:13px;font-weight:600;color:#eaf6ff;margin-right:26px;">54°</span>
+        <span style="font-size:12px;color:#2a5070;width:28px;text-align:right;">41°</span>
+      </div>
+      <!-- Row 1 Tue: top=188 -->
+      <div style="position:absolute;left:16px;top:188px;width:458px;height:40px;
+                  background:#0a1428;border:1px solid #1e3a54;border-radius:4px;
+                  display:flex;align-items:center;padding:0 10px;">
+        <span style="font-size:12px;color:#5a8aaa;width:48px;flex-shrink:0;">Tue</span>
+        <span style="font-size:11px;color:#2a5070;flex:1;text-align:center;">Overcast</span>
+        <span style="font-size:13px;font-weight:600;color:#eaf6ff;margin-right:26px;">48°</span>
+        <span style="font-size:12px;color:#2a5070;width:28px;text-align:right;">38°</span>
+      </div>
+      <!-- Row 2 Wed: top=234 -->
+      <div style="position:absolute;left:16px;top:234px;width:458px;height:40px;
+                  background:#0a1428;border:1px solid #1e3a54;border-radius:4px;
+                  display:flex;align-items:center;padding:0 10px;">
+        <span style="font-size:12px;color:#5a8aaa;width:48px;flex-shrink:0;">Wed</span>
+        <span style="font-size:11px;color:#2a5070;flex:1;text-align:center;">Rain</span>
+        <span style="font-size:13px;font-weight:600;color:#eaf6ff;margin-right:26px;">51°</span>
+        <span style="font-size:12px;color:#2a5070;width:28px;text-align:right;">40°</span>
+      </div>
+      <!-- Row 3 Thu: top=280 -->
+      <div style="position:absolute;left:16px;top:280px;width:458px;height:40px;
+                  background:#0a1428;border:1px solid #1e3a54;border-radius:4px;
+                  display:flex;align-items:center;padding:0 10px;">
+        <span style="font-size:12px;color:#5a8aaa;width:48px;flex-shrink:0;">Thu</span>
+        <span style="font-size:11px;color:#2a5070;flex:1;text-align:center;">Sunny</span>
+        <span style="font-size:13px;font-weight:600;color:#eaf6ff;margin-right:26px;">60°</span>
+        <span style="font-size:12px;color:#2a5070;width:28px;text-align:right;">44°</span>
+      </div>
+      <!-- Row 4 Fri: top=326 -->
+      <div style="position:absolute;left:16px;top:326px;width:458px;height:40px;
+                  background:#0a1428;border:1px solid #1e3a54;border-radius:4px;
+                  display:flex;align-items:center;padding:0 10px;">
+        <span style="font-size:12px;color:#5a8aaa;width:48px;flex-shrink:0;">Fri</span>
+        <span style="font-size:11px;color:#2a5070;flex:1;text-align:center;">Mostly Clear</span>
+        <span style="font-size:13px;font-weight:600;color:#eaf6ff;margin-right:26px;">58°</span>
+        <span style="font-size:12px;color:#2a5070;width:28px;text-align:right;">42°</span>
+      </div>
+
+    </div><!-- /weather column -->
+
+    <!-- ── AIRSPACE PANEL ─ 310×396 — tapping navigates to radar ── -->
+    <div style="width:310px;height:396px;background:#162033;
+                border-left:1px solid #1e3a54;position:relative;overflow:hidden;cursor:pointer;"
+         onclick="showScreen('radar')" title="Tap to open radar">
+      <!--
+        pad_all=10 → content area starts at (10,10).
+        Widget positions below include the pad offset.
+      -->
+
+      <!-- "LOCAL AIRSPACE": pos(10,10) in content → (20,20) in panel -->
+      <span style="position:absolute;left:20px;top:20px;
+                   font-size:11px;color:#2a5070;letter-spacing:1.5px;">LOCAL AIRSPACE</span>
+      <!-- "25 nm radius": pos(10,28) → (20,38) -->
+      <span style="position:absolute;left:20px;top:38px;
+                   font-size:11px;color:#2a5070;">25 nm radius</span>
+
+      <!-- Airspace circle: 240×240 at pos(25,48) in content → (35,58) in panel -->
+      <div style="position:absolute;left:35px;top:58px;width:240px;height:240px;
+                  border-radius:50%;background:#0a1428;border:1px solid #1e3a54;overflow:hidden;">
+        <svg id="airspace-svg" width="240" height="240" style="display:block;"></svg>
+      </div>
+
+      <!-- Airspace status: pos(10,298) → (20,308) — aircraft present, amber -->
+      <span style="position:absolute;left:20px;top:308px;
+                   font-size:13px;font-weight:600;color:#f59e0b;">2 AIRCRAFT NEARBY</span>
+
+    </div><!-- /airspace panel -->
+
+  </div><!-- /body -->
+
+  <!-- STATUS BAR ─ 800×26 at bottom ──────────────────────── -->
+  <div style="position:absolute;bottom:0;left:0;width:800px;height:26px;
+              background:#060e1a;border-top:1px solid #1e3a54;
+              display:flex;align-items:center;padding:0 12px;">
+    <span style="font-size:11px;color:#2a5070;letter-spacing:0.5px;">OPENSKY OK / 10:42</span>
+    <span style="margin-left:auto;font-size:11px;color:#22c55e;letter-spacing:1px;">LIVE</span>
+  </div>
+
+</div><!-- /screen-home -->
+
+
+<!-- ══════════════════════════════════════════════════════════
+     RADAR SCREEN  800 × 480
+     Layout: topbar(58) + body(396) + statusbar(26) = 480
+     Body: radar-col(490) | list-col(310)
+══════════════════════════════════════════════════════════ -->
+<div class="display" id="screen-radar" style="display:none;">
+
+  <!-- TOP BAR ─ 800×58 ─────────────────────────────────── -->
+  <div style="position:absolute;top:0;left:0;width:800px;height:58px;
+              background:#101f33;border-bottom:1px solid #1e3a54;overflow:hidden;">
+    <!-- Time: LEFT_MID +16, offset y -6 from mid -->
+    <span style="position:absolute;left:16px;top:8px;
+                 font-size:22px;font-weight:700;color:#00d4ff;line-height:1;">10:42</span>
+    <!-- Date: LEFT_MID +16, offset y +10 -->
+    <span style="position:absolute;left:16px;top:39px;
+                 font-size:12px;color:#2a5070;letter-spacing:0.3px;">Sun 27 Apr 2025</span>
+    <!-- Aircraft count: CENTER -->
+    <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+                 font-size:14px;font-weight:600;color:#f59e0b;letter-spacing:0.5px;">
+      ● 2 AIRCRAFT NEARBY
+    </span>
+    <!-- Back button: bordered, clearly tappable -->
+    <div style="position:absolute;right:12px;top:50%;transform:translateY(-50%);
+                width:90px;height:34px;background:#0a1428;
+                border:1px solid rgba(0,212,255,0.4);border-radius:4px;
+                display:flex;align-items:center;justify-content:center;cursor:pointer;">
+      <span style="font-size:12px;color:#5a8aaa;letter-spacing:0.5px;">← HOME</span>
+    </div>
+  </div>
+
+  <!-- BODY ─ 800×396 at y=58 ───────────────────────────── -->
+  <div style="position:absolute;top:58px;left:0;width:800px;height:396px;display:flex;">
+
+    <!-- ── RADAR COLUMN ─ 490×396 ── -->
+    <div style="width:490px;height:396px;position:relative;background:transparent;">
+
+      <!-- Radar circle: 380×380 at pos(55,8) in column, no padding on column -->
+      <div style="position:absolute;left:55px;top:8px;width:380px;height:380px;
+                  border-radius:50%;background:#0a1428;border:1px solid #1e3a54;overflow:hidden;">
+        <svg id="radar-svg" width="380" height="380" style="display:block;"></svg>
+      </div>
+
+
+      <!-- Range labels at absolute positions in radar_col -->
+      <span style="position:absolute;left:263px;top:60px;font-size:11px;color:#2a5070;pointer-events:none;">12.5nm</span>
+      <span style="position:absolute;left:263px;top:15px;font-size:11px;color:#2a5070;pointer-events:none;">25nm</span>
+
+    </div><!-- /radar column -->
+
+    <!-- ── AIRCRAFT LIST ─ 310×396 ── -->
+    <div style="width:310px;height:396px;background:#162033;
+                border-left:1px solid #1e3a54;position:relative;overflow:hidden;">
+
+      <!-- Header at pos(12,8) -->
+      <span style="position:absolute;left:12px;top:8px;
+                   font-size:11px;color:#2a5070;letter-spacing:0.5px;">AIRCRAFT IN RANGE  |  2</span>
+      <!-- Divider: 286×1 at pos(12,26) -->
+      <div style="position:absolute;left:12px;top:26px;width:286px;height:1px;background:#1e3a54;"></div>
+
+      <!-- List container: 310×362 at pos(0,30) -->
+      <!--
+        New row layout (84px height):
+          y=8  — Airline name   (16px, colored)
+          y=30 — CITY → CITY · CALLSIGN  (12px, secondary)
+          y=48 — Aircraft type  (14px, dim)
+          y=65 — Stats          (12px, dim)
+      -->
+
+      <!-- Row 0: DAL1234 — Delta Air Lines — amber (4200 ft < 5000) — y=30, h=84 -->
+      <div style="position:absolute;top:30px;left:0;width:310px;height:84px;
+                  border-bottom:1px solid #1e3a54;background:#162033;">
+        <!-- Accent bar 4×84 amber -->
+        <div style="position:absolute;top:0;left:0;width:4px;height:84px;background:#f59e0b;"></div>
+        <!-- Airline name: y=8, 16px -->
+        <span style="position:absolute;top:8px;left:14px;
+                     font-size:16px;font-weight:700;color:#f59e0b;letter-spacing:0.3px;">Delta Air Lines</span>
+        <!-- Route + callsign: y=30, 12px -->
+        <span style="position:absolute;top:30px;left:14px;
+                     font-size:12px;color:#5a8aaa;">Boston, US → Portland, US · DAL1234</span>
+        <!-- Aircraft type: y=48, 14px -->
+        <span style="position:absolute;top:48px;left:14px;
+                     font-size:14px;color:#2a5070;">Boeing 737-800</span>
+        <!-- Stats: y=65, 12px -->
+        <span style="position:absolute;top:65px;left:14px;
+                     font-size:12px;color:#2a5070;">4200 ft · 210 kt · NW · 4.4 nm</span>
+      </div>
+
+      <!-- Row 1: AAL456 — American Airlines — cyan (22000 ft, cruising) — y=114, h=84 -->
+      <div style="position:absolute;top:114px;left:0;width:310px;height:84px;
+                  border-bottom:1px solid #1e3a54;background:#162033;">
+        <div style="position:absolute;top:0;left:0;width:4px;height:84px;background:#00d4ff;"></div>
+        <span style="position:absolute;top:8px;left:14px;
+                     font-size:16px;font-weight:700;color:#00d4ff;letter-spacing:0.3px;">American Airlines</span>
+        <span style="position:absolute;top:30px;left:14px;
+                     font-size:12px;color:#5a8aaa;">New York, US → Boston, US · AAL456</span>
+        <span style="position:absolute;top:48px;left:14px;
+                     font-size:14px;color:#2a5070;">Airbus A320</span>
+        <span style="position:absolute;top:65px;left:14px;
+                     font-size:12px;color:#2a5070;">22000 ft · 420 kt · NE · 6.1 nm</span>
+      </div>
+
+    </div><!-- /aircraft list -->
+
+  </div><!-- /body -->
+
+  <!-- STATUS BAR ─ 800×26 ─────────────────────────────── -->
+  <div style="position:absolute;bottom:0;left:0;width:800px;height:26px;
+              background:#060e1a;border-top:1px solid #1e3a54;
+              display:flex;align-items:center;padding:0 12px;">
+    <span style="font-size:11px;color:#2a5070;letter-spacing:0.5px;">OPENSKY OK</span>
+    <span style="margin-left:auto;font-size:11px;color:#22c55e;letter-spacing:1px;">● LIVE</span>
+  </div>
+
+</div><!-- /screen-radar -->
+
+
+<script>
+// ── Geo utilities (mirrors GeoUtils.h) ──────────────────────
+// Home location: Portland, ME area (approximate — real value is in credentials.h)
+const HOME_LAT = 43.655;
+const HOME_LON = -70.258;
+const RADAR_MAX_RANGE_NM = 25;
+const PWM_LAT = 43.6462;
+const PWM_LON = -70.3093;
+
+// Coastline points from CoastlinePortland.h
+const COASTLINE = [
+  [43.498,-70.450],[43.510,-70.388],[43.525,-70.365],
+  [43.537,-70.338],[43.551,-70.323],[43.556,-70.302],
+  [43.559,-70.265],[43.561,-70.234],[43.565,-70.200],
+  [43.570,-70.193],[43.581,-70.193],[43.607,-70.200],
+  [43.623,-70.207],[43.636,-70.198],[43.647,-70.215],
+  [43.657,-70.223],[43.662,-70.232],[43.668,-70.237],
+  [43.673,-70.239],[43.681,-70.234],[43.694,-70.228],
+  [43.707,-70.220],[43.720,-70.218],[43.729,-70.214],
+  [43.745,-70.194],[43.756,-70.180],[43.769,-70.173],
+  [43.785,-70.178],[43.799,-70.185],[43.814,-70.192],
+  [43.840,-70.175],[43.870,-70.155]
+];
+
+// Mock aircraft (2 aircraft with realistic positions)
+const AIRCRAFT = [
+  // DAL1234: on approach to PWM from S, low altitude → amber
+  { callsign: 'DAL1234', lat: 43.712, lon: -70.283, heading: 155, amber: true  },
+  // AAL456: cruising high, heading NE → cyan
+  { callsign: 'AAL456',  lat: 43.590, lon: -70.182, heading:  48, amber: false },
+];
+
+function distNm(la1, lo1, la2, lo2) {
+  const R = 3440.065, D = Math.PI / 180;
+  const dlat = (la2 - la1) * D, dlon = (lo2 - lo1) * D;
+  const a = Math.sin(dlat/2)**2 + Math.cos(la1*D)*Math.cos(la2*D)*Math.sin(dlon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function bearingDeg(la1, lo1, la2, lo2) {
+  const D = Math.PI / 180;
+  const dl = (lo2 - lo1) * D;
+  const y  = Math.sin(dl) * Math.cos(la2 * D);
+  const x  = Math.cos(la1*D)*Math.sin(la2*D) - Math.sin(la1*D)*Math.cos(la2*D)*Math.cos(dl);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
+
+// latLonToRadarPx: mirrors GeoUtils::latLonToRadarPx
+function proj(cLat, cLon, pLat, pLon, maxNm, r) {
+  const d    = distNm(cLat, cLon, pLat, pLon);
+  const b    = bearingDeg(cLat, cLon, pLat, pLon);
+  const D    = Math.PI / 180;
+  const scale = Math.min(d / maxNm, 1.0);
+  const rr   = scale * r;
+  return {
+    x: r + rr * Math.sin(b * D),
+    y: r - rr * Math.cos(b * D),
+  };
+}
+
+// Build SVG content for a radar circle of given pixel radius.
+// Large (r=190): full radar — blip vectors, callsigns, N/S/E/W labels.
+// Small (r=120): airspace panel — blips only, no labels.
+function buildSVG(svgId, r) {
+  const el   = document.getElementById(svgId);
+  const large = r > 150;
+  let s = '';
+
+  // Circular clip path so coastline/blips don't bleed outside the circle
+  s += `<defs>
+    <clipPath id="clip_${svgId}">
+      <circle cx="${r}" cy="${r}" r="${r - 1}"/>
+    </clipPath>
+  </defs>`;
+
+  s += `<g clip-path="url(#clip_${svgId})">`;
+
+  // Inner range ring at half radius (12.5 nm)
+  s += `<circle cx="${r}" cy="${r}" r="${r / 2}"
+         fill="none" stroke="#1a3048" stroke-width="1" opacity="0.9"/>`;
+
+  // Coastline polyline
+  const pts = COASTLINE.map(([la, lo]) => {
+    const p = proj(HOME_LAT, HOME_LON, la, lo, RADAR_MAX_RANGE_NM, r);
+    return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+  }).join(' ');
+  const coastStroke = large ? '#2a5f8a' : '#1e3a54';
+  s += `<polyline points="${pts}" fill="none"
+         stroke="${coastStroke}" stroke-width="${large ? 2 : 1.5}"
+         stroke-linejoin="round" stroke-linecap="round"/>`;
+
+  // PWM airport: small amber dot (subtle reference, no label)
+  const pwm = proj(HOME_LAT, HOME_LON, PWM_LAT, PWM_LON, RADAR_MAX_RANGE_NM, r);
+  const pwmR = large ? 3 : 2;
+  s += `<circle cx="${pwm.x.toFixed(1)}" cy="${pwm.y.toFixed(1)}" r="${pwmR}"
+         fill="#f59e0b" opacity="0.7"/>`;
+
+  // Aircraft blips
+  for (const ac of AIRCRAFT) {
+    const p   = proj(HOME_LAT, HOME_LON, ac.lat, ac.lon, RADAR_MAX_RANGE_NM, r);
+    const col = ac.amber ? '#f59e0b' : '#00d4ff';
+    const D   = Math.PI / 180;
+
+    if (large) {
+      // Heading vector (20px)
+      const vx = p.x + 20 * Math.sin(ac.heading * D);
+      const vy = p.y - 20 * Math.cos(ac.heading * D);
+      s += `<line x1="${p.x.toFixed(1)}" y1="${p.y.toFixed(1)}"
+             x2="${vx.toFixed(1)}" y2="${vy.toFixed(1)}"
+             stroke="${col}" stroke-width="2"/>`;
+    }
+
+    // Blip dot
+    const dotR = large ? 6 : 4;
+    s += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${dotR}"
+           fill="${col}"/>`;
+
+    if (large) {
+      // Callsign label
+      s += `<text x="${(p.x + 10).toFixed(0)}" y="${(p.y - 4).toFixed(0)}"
+             font-family="Montserrat,sans-serif" font-size="11"
+             fill="${col}">${ac.callsign}</text>`;
+    }
+  }
+
+  // No home dot — PWM is the only fixed reference point
+
+  s += '</g>';
+
+  // Cardinal direction labels
+  if (large) {
+    s += `<text x="${r}"     y="16"         text-anchor="middle" font-family="Montserrat,sans-serif" font-size="12" fill="#2a5070">N</text>`;
+    s += `<text x="${r}"     y="${r*2-4}"   text-anchor="middle" font-family="Montserrat,sans-serif" font-size="12" fill="#2a5070">S</text>`;
+    s += `<text x="${r*2-6}" y="${r+4}"     text-anchor="middle" font-family="Montserrat,sans-serif" font-size="12" fill="#2a5070">E</text>`;
+    s += `<text x="6"        y="${r+4}"     text-anchor="middle" font-family="Montserrat,sans-serif" font-size="12" fill="#2a5070">W</text>`;
+  }
+
+  el.innerHTML = s;
+}
+
+function showScreen(name) {
+  document.getElementById('screen-home').style.display  = name === 'home'  ? 'block' : 'none';
+  document.getElementById('screen-radar').style.display = name === 'radar' ? 'block' : 'none';
+  document.getElementById('btn-home').className  = name === 'home'  ? 'active' : '';
+  document.getElementById('btn-radar').className = name === 'radar' ? 'active' : '';
+}
+
+window.addEventListener('load', function() {
+  buildSVG('airspace-svg', 120);
+  buildSVG('radar-svg',    190);
+});
+</script>
+</body>
+</html>
