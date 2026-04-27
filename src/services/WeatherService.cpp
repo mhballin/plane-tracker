@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <vector>
@@ -15,24 +15,25 @@ namespace {
     constexpr uint16_t RETRY_DELAY_MS = 400; // base delay, multiplied per attempt
 }
 
-WeatherService::WeatherService(const String& apiKey, const String& city) 
+WeatherService::WeatherService(const String& apiKey, const String& city)
     : apiKey(apiKey), city(city) {}
 
 String WeatherService::buildUrl() const {
-    String baseUrl = "http://api.openweathermap.org/data/2.5/weather?q=";
+    String baseUrl = "https://api.openweathermap.org/data/2.5/weather?q=";
     return baseUrl + city + "&appid=" + apiKey + "&units=imperial";
 }
 
 String WeatherService::buildForecastUrl() const {
-    String baseUrl = "http://api.openweathermap.org/data/2.5/forecast?q=";
+    String baseUrl = "https://api.openweathermap.org/data/2.5/forecast?q=";
     return baseUrl + city + "&appid=" + apiKey + "&units=imperial";
 }
 
-bool WeatherService::makeHttpRequest(const String& url, String& response, int& httpCode) {
-    WiFiClient wifiClient;
+bool WeatherService::makeHttpRequest(const String& url, JsonDocument& doc, int& httpCode) {
+    WiFiClientSecure client;
+    client.setInsecure();
     HTTPClient http;
 
-    if (!http.begin(wifiClient, url.c_str())) {
+    if (!http.begin(client, url.c_str())) {
         httpCode = 0;
         return false;
     }
@@ -40,19 +41,20 @@ bool WeatherService::makeHttpRequest(const String& url, String& response, int& h
     http.setTimeout(10000);
     httpCode = http.GET();
     if (httpCode == HTTP_OK_CODE) {
-        response = http.getString();
+        String payload = http.getString();
         http.end();
-        return true;
+        DeserializationError err = deserializeJson(doc, payload);
+        return err == DeserializationError::Ok;
     }
 
     http.end();
     return false;
 }
 
-bool WeatherService::makeHttpRequestWithRetry(const String& url, String& response) {
+bool WeatherService::makeHttpRequestWithRetry(const String& url, JsonDocument& doc) {
     int httpCode = 0;
     for (uint8_t attempt = 1; attempt <= MAX_HTTP_ATTEMPTS; ++attempt) {
-        if (makeHttpRequest(url, response, httpCode)) {
+        if (makeHttpRequest(url, doc, httpCode)) {
             lastError = "";
             return true;
         }
@@ -72,15 +74,7 @@ bool WeatherService::makeHttpRequestWithRetry(const String& url, String& respons
     return false;
 }
 
-bool WeatherService::parseWeatherData(const String& jsonData, WeatherData& weather) {
-    // Use JsonDocument (DynamicJsonDocument is acceptable, keep size tuned)
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, jsonData);
-
-    if (error) {
-        return false;
-    }
-
+bool WeatherService::parseWeatherData(JsonDocument& doc, WeatherData& weather) {
     JsonObject root = doc.as<JsonObject>();
     // Prefer the is<T>() checks instead of deprecated containsKey
     if (!root["main"].is<JsonObject>() || !root["weather"].is<JsonArray>()) {
@@ -111,42 +105,23 @@ bool WeatherService::parseWeatherData(const String& jsonData, WeatherData& weath
     return false;
 }
 
-bool WeatherService::parseForecastData(const String& jsonData, WeatherData& weather) {
-    // Forecast JSON is large (~15KB), increase document size
-    JsonDocument doc;
-    // Filter to reduce memory usage - we only need specific fields
-    DeserializationError error = deserializeJson(doc, jsonData);
-
-    if (error) {
-        Serial.print("Forecast deserialize failed: ");
-        Serial.println(error.c_str());
-        return false;
-    }
-
+bool WeatherService::parseForecastData(JsonDocument& doc, WeatherData& weather) {
     JsonArray list = doc["list"];
     if (list.isNull()) return false;
 
     weather.forecast.clear();
-    
+
     // Simple aggregation: Group by day
     // Since the list is chronological, we can just track the current day
     int currentDay = -1;
     float dailyMin = 1000.0;
     float dailyMax = -1000.0;
     String dailyCondition = "";
-    
-    // Helper to get day of week from unix timestamp
-    auto getDayOfWeek = [](unsigned long dt) -> String {
-        // 1970-01-01 was Thursday (4)
-        int dayNum = ((dt / 86400) + 4) % 7;
-        const char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-        return String(days[dayNum]);
-    };
 
     for (JsonObject item : list) {
         unsigned long dt = item["dt"];
         int day = (dt / 86400); // Days since epoch
-        
+
         float temp_min = item["main"]["temp_min"];
         float temp_max = item["main"]["temp_max"];
         String condition = item["weather"][0]["main"] | "Clouds";
@@ -159,28 +134,21 @@ bool WeatherService::parseForecastData(const String& jsonData, WeatherData& weat
         } else if (day != currentDay) {
             // New day found, push previous day
             // Skip if it's the *current* day (we want future forecast)
-            // Actually, usually we want today + next 4 days. 
+            // Actually, usually we want today + next 4 days.
             // Let's just push every completed day.
-            
+
             DailyForecast df;
-            // Calculate day name for the COMPLETED day
-            // We can approximate using the timestamp of the previous item, 
-            // but since we just switched, 'currentDay' is the day index.
-            // We need a timestamp for that day. 
-            // Let's just use the day index logic in getDayOfWeek if we passed a timestamp.
-            // Or simpler: just use the day index relative to 1970.
-            
             // Re-calculate day name based on the day index
             int dayNum = (currentDay + 4) % 7;
             const char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
             df.dayName = days[dayNum];
-            
+
             df.tempMin = dailyMin;
             df.tempMax = dailyMax;
             df.condition = dailyCondition;
-            
+
             weather.forecast.push_back(df);
-            
+
             // Reset for new day
             currentDay = day;
             dailyMin = temp_min;
@@ -189,20 +157,32 @@ bool WeatherService::parseForecastData(const String& jsonData, WeatherData& weat
             // Better: pick the "worst" condition or just the one at 12:00?
             // For simplicity, keep the first one or update if it's "Clear" and we see "Rain".
             dailyCondition = condition;
-            
+
             if (weather.forecast.size() >= 5) break;
         } else {
             // Same day, update min/max
             if (temp_min < dailyMin) dailyMin = temp_min;
             if (temp_max > dailyMax) dailyMax = temp_max;
-            
+
             // Simple priority for condition: Rain/Snow > Clouds > Clear
             if (condition == "Rain" || condition == "Snow" || condition == "Thunderstorm") {
                 dailyCondition = condition;
             }
         }
     }
-    
+
+    // Fix: push the last accumulated day if the loop ended without a day boundary
+    if (currentDay != -1 && weather.forecast.size() < 5) {
+        DailyForecast df;
+        int dayNum = (currentDay + 4) % 7;
+        const char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+        df.dayName = days[dayNum];
+        df.tempMin = dailyMin;
+        df.tempMax = dailyMax;
+        df.condition = dailyCondition;
+        weather.forecast.push_back(df);
+    }
+
     return true;
 }
 
@@ -214,24 +194,24 @@ bool WeatherService::getWeather(WeatherData& weather) {
 
     // 1. Get Current Weather
     String url = buildUrl();
-    String response;
+    JsonDocument doc;
 
-    if (!makeHttpRequestWithRetry(url, response)) {
+    if (!makeHttpRequestWithRetry(url, doc)) {
         return false;
     }
 
-    if (!parseWeatherData(response, weather)) {
+    if (!parseWeatherData(doc, weather)) {
         lastError = "Weather response parse error";
         return false;
     }
 
     // 2. Get Forecast
     String forecastUrl = buildForecastUrl();
-    String forecastResponse;
-    
+    JsonDocument forecastDoc;
+
     // Don't fail completely if forecast fails, just log it
-    if (makeHttpRequestWithRetry(forecastUrl, forecastResponse)) {
-        parseForecastData(forecastResponse, weather);
+    if (makeHttpRequestWithRetry(forecastUrl, forecastDoc)) {
+        parseForecastData(forecastDoc, weather);
     } else {
         Serial.println("Failed to fetch forecast data");
     }

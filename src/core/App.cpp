@@ -88,17 +88,14 @@ bool App::begin() {
         Serial.println("[WARN] OpenSky auth failed; API may be rate-limited");
     }
 
-    webDashboard_->begin(80);
+    webDashboard_->begin();
 
     routeCache_ = new RouteCache();
 
     setupTasks();
 
-    // Prime data so first render/web response is useful.
-    updateWeather();
-    updateAircraft();
-    updateDisplay();
-    updateWebSnapshot();
+    // Tasks registered with runImmediately=true so the first App::tick() fires
+    // all four update functions immediately, without blocking setup().
 
     Serial.println("[INIT] v4 rewrite foundation ready");
     return true;
@@ -179,8 +176,8 @@ void App::tick() {
 }
 
 void App::setupTasks() {
-    weatherTaskId_ = scheduler_.addTask(Config::WEATHER_UPDATE_INTERVAL, false);
-    aircraftTaskId_ = scheduler_.addTask(Config::PLANE_UPDATE_INTERVAL, false);
+    weatherTaskId_ = scheduler_.addTask(Config::WEATHER_UPDATE_INTERVAL, true);
+    aircraftTaskId_ = scheduler_.addTask(Config::PLANE_UPDATE_INTERVAL, true);
     displayTaskId_ = scheduler_.addTask(Config::DISPLAY_UPDATE_INTERVAL, true);
     healthTaskId_ = scheduler_.addTask(Config::HEALTH_UPDATE_INTERVAL, true);
 }
@@ -263,6 +260,10 @@ void App::updateDisplay() {
 }
 
 void App::applyNightMode() {
+    static unsigned long lastCheck = 0;
+    if (millis() - lastCheck < 60000) return;
+    lastCheck = millis();
+
     if (!display_) {
         return;
     }

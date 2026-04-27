@@ -1,60 +1,22 @@
 // src/services/RouteCache.cpp
 #include "RouteCache.h"
+#include "data/AirlineTable.h"
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include "config/Config.h"
 
 // NVS namespace (max 15 chars)
 static constexpr char NVS_NS[] = "route_cache";
 
-// ICAO -> IATA mapping (must stay in sync with OpenSkyService kAirlineTable)
-static const struct { const char* icao; const char* iata; } kIataMap[] = {
-    // US Major
-    {"AAL","AA"},{"DAL","DL"},{"UAL","UA"},{"SWA","WN"},{"JBU","B6"},
-    {"ASA","AS"},{"FFT","F9"},{"NKS","NK"},{"HAL","HA"},{"SCX","SY"},
-    // US Regional
-    {"SKW","OO"},{"RPA","YX"},{"ENY","MQ"},{"PDT","PT"},{"PSA","OH"},
-    {"QXE","QX"},{"ASH","YV"},{"KAP","9K"},{"GJS","G7"},{"AWI","ZW"},
-    {"SLV","3M"},{"VTE","LF"},
-    // US Cargo
-    {"FDX","FX"},{"UPS","5X"},{"GTI","5Y"},{"ABX","GB"},{"ATN","8C"},
-    {"KFS","K4"},{"PAC","PO"},{"NCR","N8"},{"AMF","M6"},
-    // Canada
-    {"ACA","AC"},{"WJA","WS"},{"TSC","TS"},{"PDM","PD"},{"JZA","QK"},
-    {"SWG","WG"},{"CJT","W8"},
-    // Latin America & Caribbean
-    {"AMX","AM"},{"VOI","Y4"},{"VIV","VB"},{"CMP","CM"},{"AVA","AV"},
-    {"LAN","LA"},{"TAM","JJ"},{"GLO","G3"},{"AZU","AD"},{"BWA","BW"},{"BHS","UP"},
-    // Europe
-    {"BAW","BA"},{"VIR","VS"},{"DLH","LH"},{"AFR","AF"},{"KLM","KL"},{"IBE","IB"},
-    {"AZA","AZ"},{"SAS","SK"},{"TAP","TP"},{"EIN","EI"},{"FIN","AY"},
-    {"LOT","LO"},{"CSA","OK"},{"AUA","OS"},{"SWR","LX"},{"ELY","LY"},
-    {"THY","TK"},{"ICE","FI"},{"TRA","HV"},{"WZZ","W6"},{"EWG","EW"},
-    {"BEL","SN"},{"VLG","VY"},{"NAX","DY"},{"RYR","FR"},{"EZY","U2"},
-    {"CLH","CL"},{"AEE","A3"},{"TOM","BY"},{"EXS","LS"},{"LOG","LM"},
-    {"VOE","V7"},{"CLX","CV"},
-    // Middle East
-    {"UAE","EK"},{"ETD","EY"},{"QTR","QR"},{"SVA","SV"},{"MSR","MS"},
-    {"RJA","RJ"},{"MEA","ME"},{"GFA","GF"},{"OMA","WY"},{"FDB","FZ"},{"ABY","G9"},
-    // Africa
-    {"ETH","ET"},{"KQA","KQ"},{"RAM","AT"},{"SAA","SA"},
-    // Asia-Pacific
-    {"ANA","NH"},{"JAL","JL"},{"CPA","CX"},{"KAL","KE"},{"AAR","OZ"},
-    {"CES","MU"},{"CSN","CZ"},{"CCA","CA"},{"EVA","BR"},{"CAL","CI"},
-    {"MAS","MH"},{"SIA","SQ"},{"THA","TG"},{"VNA","VN"},{"PAL","PR"},
-    {"GIA","GA"},{"AIC","AI"},{"IGO","6E"},{"AXM","AK"},
-    // Oceania
-    {"QFA","QF"},{"ANZ","NZ"},{"JST","JQ"},{"VAH","VA"},
-};
-
 RouteCache::RouteCache() {}
 
 String RouteCache::toIataFlightNumber(const String& callsign) {
     if (callsign.length() < 4) return "";
     String prefix = callsign.substring(0, 3);
-    for (const auto& e : kIataMap) {
-        if (prefix == e.icao) {
-            return String(e.iata) + callsign.substring(3);
+    for (const auto& entry : kAirlineTable) {
+        if (prefix == entry.prefix) {
+            return String(entry.iataCode) + callsign.substring(3);
         }
     }
     return "";
@@ -159,8 +121,10 @@ bool RouteCache::fetchFromHexdb(const String& callsign,
                                   String& destinationCity, String& destinationCountry) {
     String url = String("https://hexdb.io/callsign-route?callsign=") + callsign;
 
+    WiFiClientSecure client;
+    client.setInsecure();
     HTTPClient http;
-    http.begin(url);
+    http.begin(client, url);
     http.setTimeout(8000);
 
     Serial.printf("[RouteCache] hexdb GET %s\n", url.c_str());
@@ -219,8 +183,10 @@ bool RouteCache::fetchFromAdsbdb(const String& callsign,
                                   String& destinationCity, String& destinationCountry) {
     String url = String("https://api.adsbdb.com/v0/callsign/") + callsign;
 
+    WiFiClientSecure client;
+    client.setInsecure();
     HTTPClient http;
-    http.begin(url);
+    http.begin(client, url);
     http.setTimeout(8000);
 
     Serial.printf("[RouteCache] adsbdb GET %s\n", url.c_str());
@@ -284,8 +250,10 @@ bool RouteCache::fetchFromApi(const String& iataFlightNumber,
     url += "/";
     url += dateBuf;
 
+    WiFiClientSecure client;
+    client.setInsecure();
     HTTPClient http;
-    http.begin(url);
+    http.begin(client, url);
     http.setTimeout(10000);
     http.addHeader("x-rapidapi-key",  Config::AERODATABOX_API_KEY);
     http.addHeader("x-rapidapi-host", "aerodatabox.p.rapidapi.com");

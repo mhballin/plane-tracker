@@ -12,7 +12,7 @@ class WebDashboard {
 public:
     WebDashboard();
 
-    bool begin(uint16_t port = 80);
+    bool begin();
     void loop();
 
     void update(const core::HealthSnapshot& health, const WeatherData& weather, int aircraftCount);

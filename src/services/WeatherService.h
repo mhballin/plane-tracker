@@ -4,7 +4,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "../config/Config.h"
@@ -22,8 +22,8 @@ private:
     String lastError;
     String buildUrl() const;
     String buildForecastUrl() const;
-    bool makeHttpRequestWithRetry(const String& url, String& response);
-    bool makeHttpRequest(const String& url, String& response, int& httpCode);
-    bool parseWeatherData(const String& jsonData, WeatherData& weather);
-    bool parseForecastData(const String& jsonData, WeatherData& weather);
+    bool makeHttpRequestWithRetry(const String& url, JsonDocument& doc);
+    bool makeHttpRequest(const String& url, JsonDocument& doc, int& httpCode);
+    bool parseWeatherData(JsonDocument& doc, WeatherData& weather);
+    bool parseForecastData(JsonDocument& doc, WeatherData& weather);
 };

@@ -45,9 +45,10 @@ void SerialCommandHandler::dispatch(const String& command) {
 
 void SerialCommandHandler::runI2CScan() {
     Serial.println("[CMD] Running I2C scan");
-    // Wire.end() tears down the bus (including touch controller). This is a
-    // diagnostic-only command; the display driver reinitialises touch on next
-    // use via its own state, so this is safe for a one-shot scan.
+    // Wire.end() tears down the bus, which kills the GT911 touch controller.
+    // LovyanGFX does NOT re-initialize touch automatically on getTouch() calls —
+    // it is only initialized during lcd->init(). We call lcd->init() after the
+    // scan to restore touch.
     Wire.end();
     Wire.begin(hal::Elecrow5Inch::TOUCH_PIN_SDA, hal::Elecrow5Inch::TOUCH_PIN_SCL);
     Wire.setClock(hal::Elecrow5Inch::TOUCH_I2C_FREQ);
@@ -60,6 +61,15 @@ void SerialCommandHandler::runI2CScan() {
         }
     }
     Serial.printf("[I2C] Devices found: %d\n", found);
+
+    // Re-initialize the display driver to restore the GT911 touch controller.
+    if (display_) {
+        auto* lcd = display_->getLCD();
+        if (lcd) {
+            lcd->init();
+            Serial.println("[I2C] Touch controller re-initialized");
+        }
+    }
 }
 
 void SerialCommandHandler::dumpRawTouch() {

@@ -62,9 +62,7 @@ WebDashboard::WebDashboard()
     , started_(false) {
 }
 
-bool WebDashboard::begin(uint16_t port) {
-  (void)port;
-
+bool WebDashboard::begin() {
     if (started_) {
         return true;
     }

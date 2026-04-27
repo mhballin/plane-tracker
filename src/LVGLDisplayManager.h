@@ -102,7 +102,7 @@ private:
     // Airspace status panel (on home screen)
     lv_obj_t* airspace_circle_    = nullptr;
     lv_obj_t* airspace_coastline_ = nullptr;
-    lv_point_precise_t airspace_pts_[256] = {};      // projected pts for dim coastline
+    lv_point_precise_t airspace_pts_[33] = {};       // COASTLINE_PORTLAND_LEN(32) + 1
     lv_obj_t* label_airspace_status_ = nullptr;
     lv_obj_t* label_airspace_sub_    = nullptr;
     lv_obj_t* label_airspace_range_  = nullptr;
@@ -110,7 +110,7 @@ private:
     // --- Radar screen widgets ---
     lv_obj_t* radar_circle_     = nullptr;
     lv_obj_t* radar_coastline_  = nullptr;   // lv_line, full coastline
-    lv_point_precise_t radar_pts_[256]  = {};        // projected pts for coastline
+    lv_point_precise_t radar_pts_[33]   = {};        // COASTLINE_PORTLAND_LEN(32) + 1
     lv_obj_t* label_radar_count_ = nullptr;  // "3 AIRCRAFT NEARBY" badge
     lv_obj_t* label_radar_time_  = nullptr;
     lv_obj_t* label_radar_date_  = nullptr;
