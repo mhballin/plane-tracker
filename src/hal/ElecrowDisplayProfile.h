@@ -8,7 +8,7 @@ namespace Elecrow5Inch {
 
 constexpr int PANEL_WIDTH = 800;
 constexpr int PANEL_HEIGHT = 480;
-constexpr int PANEL_ROTATION = 2;
+constexpr int PANEL_ROTATION = 0;
 
 constexpr gpio_num_t PIN_D0 = GPIO_NUM_8;
 constexpr gpio_num_t PIN_D1 = GPIO_NUM_3;

@@ -112,9 +112,6 @@ public:
     }
 };
 
-// Define buffer sizes for LVGL
-#define LVGL_BUFFER_SIZE (hal::Elecrow5Inch::PANEL_WIDTH * 40)  // 40 lines buffer
-
 // Static instance for callbacks
 static LVGLDisplayManager* s_instance = nullptr;
 
@@ -210,20 +207,19 @@ bool LVGLDisplayManager::initHardware() {
         }
     }
 
-    // DMA-capable draw buffers must be in internal SRAM
+    static constexpr int kBufLines = 10;
+    static constexpr size_t kBufPx = hal::Elecrow5Inch::PANEL_WIDTH * kBufLines;
     static lv_color_t* buf1 = (lv_color_t*)heap_caps_malloc(
-        LVGL_BUFFER_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    static lv_color_t* buf2 = (lv_color_t*)heap_caps_malloc(
-        LVGL_BUFFER_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if (!buf1 || !buf2) {
-        Serial.println("[LVGL] Failed to allocate display buffers");
+        kBufPx * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!buf1) {
+        Serial.println("[LVGL] Failed to allocate display buffer");
         return false;
     }
 
     lv_display = lv_display_create(hal::Elecrow5Inch::PANEL_WIDTH, hal::Elecrow5Inch::PANEL_HEIGHT);
     lv_display_set_flush_cb(lv_display, flush_cb);
-    lv_display_set_buffers(lv_display, buf1, buf2,
-        LVGL_BUFFER_SIZE * sizeof(lv_color_t), LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(lv_display, buf1, nullptr,
+        kBufPx * sizeof(lv_color_t), LV_DISPLAY_RENDER_MODE_PARTIAL);
 
     lv_indev = lv_indev_create();
     lv_indev_set_type(lv_indev, LV_INDEV_TYPE_POINTER);
@@ -261,18 +257,14 @@ bool LVGLDisplayManager::initialize() {
     return initHardware() && buildScreens();
 }
 
-// Flush callback for LovyanGFX
 void LVGLDisplayManager::flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     if (!s_instance || !s_instance->lcd) return;
-    
     uint32_t w = area->x2 - area->x1 + 1;
     uint32_t h = area->y2 - area->y1 + 1;
-    
     s_instance->lcd->startWrite();
     s_instance->lcd->setAddrWindow(area->x1, area->y1, w, h);
     s_instance->lcd->writePixels((lgfx::rgb565_t*)px_map, w * h);
     s_instance->lcd->endWrite();
-    
     lv_display_flush_ready(disp);
 }
 
@@ -1183,12 +1175,12 @@ void LVGLDisplayManager::setScreen(ScreenState screen) {
     switch (screen) {
         case SCREEN_HOME:
             currentScreen = screen;
-            if (screen_home) lv_screen_load_anim(screen_home, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
+            if (screen_home) lv_screen_load(screen_home);
             break;
         case SCREEN_RADAR:
             if (!screen_radar) { lv_unlock(); return; }
             currentScreen = screen;
-            lv_screen_load_anim(screen_radar, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
+            lv_screen_load(screen_radar);
             break;
     }
     lv_unlock();
