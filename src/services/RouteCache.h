@@ -4,6 +4,7 @@
 #pragma once
 #include <Arduino.h>
 #include <Preferences.h>
+#include <set>
 
 class RouteCache {
 public:
@@ -25,6 +26,7 @@ public:
 
 private:
     Preferences prefs_;
+    std::set<String> notFound_;  // session-level negative cache — skip callsigns all backends returned 404
 
     /// Convert ICAO callsign prefix to IATA flight number (e.g. "UAL1234" -> "UA1234").
     String toIataFlightNumber(const String& callsign);

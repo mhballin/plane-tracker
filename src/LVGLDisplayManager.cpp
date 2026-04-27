@@ -681,7 +681,7 @@ void LVGLDisplayManager::buildAirspacePanel(lv_obj_t* parent) {
     label_airspace_status_ = lv_label_create(parent);
     lv_obj_set_style_text_font(label_airspace_status_, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label_airspace_status_, COLOR_SUCCESS, 0);
-    lv_label_set_text(label_airspace_status_, "\xe2\x97\x8f AIRSPACE CLEAR");
+    lv_label_set_text(label_airspace_status_, LV_SYMBOL_BULLET " AIRSPACE CLEAR");
     lv_obj_set_pos(label_airspace_status_, 10, 298);
 
     label_airspace_sub_ = lv_label_create(parent);
@@ -725,13 +725,13 @@ void LVGLDisplayManager::build_radar_screen() {
     label_radar_count_ = lv_label_create(topbar);
     lv_obj_set_style_text_font(label_radar_count_, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label_radar_count_, COLOR_AMBER, 0);
-    lv_label_set_text(label_radar_count_, "\xe2\x97\x8f 0 AIRCRAFT NEARBY");
+    lv_label_set_text(label_radar_count_, LV_SYMBOL_BULLET " 0 AIRCRAFT NEARBY");
     lv_obj_align(label_radar_count_, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_t* hint = lv_label_create(topbar);
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(hint, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(hint, "tap bar \xe2\x86\x90 home");
+    lv_label_set_text(hint, "tap bar " LV_SYMBOL_LEFT " home");
     lv_obj_align(hint, LV_ALIGN_RIGHT_MID, -16, 0);
 
     // === BODY ===
@@ -912,7 +912,7 @@ void LVGLDisplayManager::build_radar_screen() {
     label_list_header_ = lv_label_create(list_col);
     lv_obj_set_style_text_font(label_list_header_, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(label_list_header_, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(label_list_header_, "AIRCRAFT IN RANGE  \xc2\xb7  0");
+    lv_label_set_text(label_list_header_, "AIRCRAFT IN RANGE  |  0");
     lv_obj_set_pos(label_list_header_, 12, 8);
 
     // Thin divider line
@@ -1015,7 +1015,7 @@ void LVGLDisplayManager::build_radar_screen() {
     lv_obj_t* sbar_live = lv_label_create(sbar);
     lv_obj_set_style_text_font(sbar_live, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(sbar_live, COLOR_SUCCESS, 0);
-    lv_label_set_text(sbar_live, "\xe2\x97\x8f LIVE");
+    lv_label_set_text(sbar_live, LV_SYMBOL_BULLET " LIVE");
     lv_obj_align(sbar_live, LV_ALIGN_RIGHT_MID, -12, 0);
 }
 
@@ -1028,13 +1028,13 @@ void LVGLDisplayManager::update_home_screen(const WeatherData& weather,
 
     if (aircraftCount > 0) {
         char buf[40];
-        snprintf(buf, sizeof(buf), "\xe2\x97\x8f %d AIRCRAFT NEARBY", aircraftCount);
+        snprintf(buf, sizeof(buf), LV_SYMBOL_BULLET " %d AIRCRAFT NEARBY", aircraftCount);
         lv_obj_set_style_text_color(label_airspace_status_, COLOR_AMBER, 0);
         lv_label_set_text(label_airspace_status_, buf);
         lv_label_set_text(label_airspace_sub_, "Switching to radar...");
     } else {
         lv_obj_set_style_text_color(label_airspace_status_, COLOR_SUCCESS, 0);
-        lv_label_set_text(label_airspace_status_, "\xe2\x97\x8f AIRSPACE CLEAR");
+        lv_label_set_text(label_airspace_status_, LV_SYMBOL_BULLET " AIRSPACE CLEAR");
         lv_label_set_text(label_airspace_sub_, "No aircraft within 25nm");
     }
 }
@@ -1076,14 +1076,14 @@ void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
             lv_label_set_text(label_radar_date_, db);
         }
         char cb[32];
-        snprintf(cb, sizeof(cb), "\xe2\x97\x8f %d AIRCRAFT NEARBY", aircraftCount);
+        snprintf(cb, sizeof(cb), LV_SYMBOL_BULLET " %d AIRCRAFT NEARBY", aircraftCount);
         lv_label_set_text(label_radar_count_, cb);
     }
 
     // Update list header
     {
         char hb[40];
-        snprintf(hb, sizeof(hb), "AIRCRAFT IN RANGE  \xc2\xb7  %d", aircraftCount);
+        snprintf(hb, sizeof(hb), "AIRCRAFT IN RANGE  |  %d", aircraftCount);
         lv_label_set_text(label_list_header_, hb);
     }
 
@@ -1170,10 +1170,10 @@ void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
             // Type · route
             char tr[64];
             if (!a.aircraftType.isEmpty() && !a.origin.isEmpty() && !a.destination.isEmpty()) {
-                snprintf(tr, sizeof(tr), "%s  \xc2\xb7  %s \xe2\x86\x92 %s",
+                snprintf(tr, sizeof(tr), "%s  |  %s " LV_SYMBOL_RIGHT " %s",
                          a.aircraftType.c_str(), a.origin.c_str(), a.destination.c_str());
             } else if (!a.origin.isEmpty() && !a.destination.isEmpty()) {
-                snprintf(tr, sizeof(tr), "%s \xe2\x86\x92 %s",
+                snprintf(tr, sizeof(tr), "%s " LV_SYMBOL_RIGHT " %s",
                          a.origin.c_str(), a.destination.c_str());
             } else if (!a.aircraftType.isEmpty()) {
                 snprintf(tr, sizeof(tr), "%s", a.aircraftType.c_str());
@@ -1185,7 +1185,7 @@ void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
             // Summary line (collapsed)
             char sm[80];
             float speedKt = a.velocity * 1.94384f;
-            snprintf(sm, sizeof(sm), "%.0f ft  \xc2\xb7  %.0f kt  \xc2\xb7  %s  \xc2\xb7  %.1f nm",
+            snprintf(sm, sizeof(sm), "%.0f ft  |  %.0f kt  |  %s  |  %.1f nm",
                      altFt, speedKt, GeoUtils::cardinalDir(bearing), distNm);
             lv_label_set_text(row.label_summary, sm);
 

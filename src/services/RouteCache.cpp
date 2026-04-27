@@ -28,6 +28,9 @@ bool RouteCache::lookup(const String& callsign,
                          String& destinationCity, String& destinationCountry) {
     if (callsign.isEmpty()) return false;
 
+    // Skip callsigns that returned 404 from all backends this session
+    if (notFound_.count(callsign)) return false;
+
     // Check NVS first
     // New format (6 fields): "BOS|New York|US|LAX|Los Angeles|US"
     // Old format (4 fields): "BOS|Boston Logan|LAX|Los Angeles Intl"
@@ -87,6 +90,7 @@ bool RouteCache::lookup(const String& callsign,
         }
     }
 
+    notFound_.insert(callsign);
     return false;
 }
 
