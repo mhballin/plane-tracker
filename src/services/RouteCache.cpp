@@ -141,7 +141,9 @@ void RouteCache::store(const String& callsign,
     String value = origin + "|" + originCity + "|" + originCountry + "|"
                  + destination + "|" + destinationCity + "|" + destinationCountry;
     prefs_.begin(NVS_NS, false);
-    prefs_.putString(callsign.c_str(), value);
+    if (prefs_.putString(callsign.c_str(), value) == 0) {
+        Serial.println("[RouteCache] NVS full — skipping persist, existing entries preserved");
+    }
     prefs_.end();
     Serial.printf("[RouteCache] Stored: %s -> %s (%s, %s) -> %s (%s, %s)\n",
                   callsign.c_str(),

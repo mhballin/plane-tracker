@@ -1,0 +1,14 @@
+# Plane Tracker — 4MB flash, no OTA (USB-only flashing)
+#
+# ESP32 Arduino always uploads the app binary to 0x10000.
+# Factory partition must start there or the bootloader can't find it.
+#
+# Layout:
+#   nvs:       0x9000 – 0xFFFF  (28 KB, fits ~280 route entries)
+#   factory:  0x10000 – 0x3EFFF  (3.875 MB, was 1.875 MB with dual-OTA)
+#   coredump: 0x3F0000 – 0x3FFFFF (64 KB, crash diagnostics)
+#
+# Name,     Type, SubType,  Offset,   Size
+nvs,        data, nvs,      0x9000,   0x7000
+factory,    app,  factory,  0x10000,  0x3E0000
+coredump,   data, coredump, 0x3F0000, 0x10000
