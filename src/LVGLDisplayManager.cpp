@@ -207,12 +207,17 @@ bool LVGLDisplayManager::initHardware() {
         }
     }
 
+    // Small SRAM draw buffer — PARTIAL mode so LVGL only rewrites dirty regions.
+    // Panel_RGB has a single PSRAM framebuffer with no double-buffer API in
+    // ESP-IDF 4.4.7; waitDisplay() is a no-op. Keeping writes small and
+    // infrequent (this is a ~1 Hz dashboard) minimises the DMA-write race window.
     static constexpr int kBufLines = 10;
-    static constexpr size_t kBufPx = hal::Elecrow5Inch::PANEL_WIDTH * kBufLines;
+    static constexpr size_t kBufPx =
+        hal::Elecrow5Inch::PANEL_WIDTH * kBufLines;
     static lv_color_t* buf1 = (lv_color_t*)heap_caps_malloc(
         kBufPx * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     if (!buf1) {
-        Serial.println("[LVGL] Failed to allocate display buffer");
+        Serial.println("[LVGL] Failed to allocate draw buffer");
         return false;
     }
 
@@ -549,19 +554,27 @@ void LVGLDisplayManager::updateWeatherWidgets(WeatherWidgets& w,
 
     // Status bar
     if (w.label_status_left) {
-        if (aircraftCount > 0) {
+        if (!wifiConnected_) {
+            lv_obj_set_style_text_color(w.label_status_left, COLOR_DESCENT, 0);
+            lv_label_set_text(w.label_status_left, "NO WIFI SIGNAL");
+        } else if (aircraftCount > 0) {
             char ts[16];
             struct tm ti;
             getLocalTime(&ti);
             strftime(ts, sizeof(ts), "%H:%M", &ti);
             snprintf(buf, sizeof(buf), "OPENSKY OK / %s", ts);
+            lv_obj_set_style_text_color(w.label_status_left, COLOR_TEXT_DIM, 0);
             lv_label_set_text(w.label_status_left, buf);
         } else {
+            lv_obj_set_style_text_color(w.label_status_left, COLOR_TEXT_DIM, 0);
             lv_label_set_text(w.label_status_left, "NO AIRCRAFT DETECTED");
         }
     }
     if (w.label_status_live) {
-        if (aircraftCount > 0) {
+        if (!wifiConnected_) {
+            lv_obj_set_style_text_color(w.label_status_live, COLOR_DESCENT, 0);
+            lv_label_set_text(w.label_status_live, "OFFLINE");
+        } else if (aircraftCount > 0) {
             lv_obj_set_style_text_color(w.label_status_live, COLOR_SUCCESS, 0);
             lv_label_set_text(w.label_status_live, "LIVE");
         } else {
@@ -984,17 +997,17 @@ void LVGLDisplayManager::build_radar_screen() {
     lv_obj_set_style_pad_all(sbar, 0, 0);
     lv_obj_clear_flag(sbar, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t* sbar_left = lv_label_create(sbar);
-    lv_obj_set_style_text_font(sbar_left, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(sbar_left, COLOR_TEXT_DIM, 0);
-    lv_label_set_text(sbar_left, "OPENSKY OK");
-    lv_obj_align(sbar_left, LV_ALIGN_LEFT_MID, 12, 0);
+    label_radar_status_left_ = lv_label_create(sbar);
+    lv_obj_set_style_text_font(label_radar_status_left_, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(label_radar_status_left_, COLOR_TEXT_DIM, 0);
+    lv_label_set_text(label_radar_status_left_, "OPENSKY OK");
+    lv_obj_align(label_radar_status_left_, LV_ALIGN_LEFT_MID, 12, 0);
 
-    lv_obj_t* sbar_live = lv_label_create(sbar);
-    lv_obj_set_style_text_font(sbar_live, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(sbar_live, COLOR_SUCCESS, 0);
-    lv_label_set_text(sbar_live, LV_SYMBOL_BULLET " LIVE");
-    lv_obj_align(sbar_live, LV_ALIGN_RIGHT_MID, -12, 0);
+    label_radar_status_live_ = lv_label_create(sbar);
+    lv_obj_set_style_text_font(label_radar_status_live_, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(label_radar_status_live_, COLOR_SUCCESS, 0);
+    lv_label_set_text(label_radar_status_live_, LV_SYMBOL_BULLET " LIVE");
+    lv_obj_align(label_radar_status_live_, LV_ALIGN_RIGHT_MID, -12, 0);
 }
 
 void LVGLDisplayManager::update_home_screen(const WeatherData& weather,
@@ -1063,6 +1076,21 @@ void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
         char hb[40];
         snprintf(hb, sizeof(hb), "AIRCRAFT IN RANGE  |  %d", aircraftCount);
         lv_label_set_text(label_list_header_, hb);
+    }
+
+    // Status bar — reflects WiFi / data state
+    if (label_radar_status_left_ && label_radar_status_live_) {
+        if (!wifiConnected_) {
+            lv_obj_set_style_text_color(label_radar_status_left_, COLOR_DESCENT, 0);
+            lv_label_set_text(label_radar_status_left_, "NO SIGNAL");
+            lv_obj_set_style_text_color(label_radar_status_live_, COLOR_TEXT_DIM, 0);
+            lv_label_set_text(label_radar_status_live_, LV_SYMBOL_BULLET " OFFLINE");
+        } else {
+            lv_obj_set_style_text_color(label_radar_status_left_, COLOR_TEXT_DIM, 0);
+            lv_label_set_text(label_radar_status_left_, "OPENSKY OK");
+            lv_obj_set_style_text_color(label_radar_status_live_, COLOR_SUCCESS, 0);
+            lv_label_set_text(label_radar_status_live_, LV_SYMBOL_BULLET " LIVE");
+        }
     }
 
     for (int i = 0; i < Config::MAX_AIRCRAFT; i++) {
@@ -1218,6 +1246,12 @@ void LVGLDisplayManager::setBrightness(uint8_t brightness) {
     if (lcd) {
         lcd->setBrightness(brightness);
     }
+    lv_unlock();
+}
+
+void LVGLDisplayManager::setWifiConnected(bool connected) {
+    lv_lock();
+    wifiConnected_ = connected;
     lv_unlock();
 }
 

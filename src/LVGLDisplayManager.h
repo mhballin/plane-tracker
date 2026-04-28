@@ -24,6 +24,7 @@ public:
     void tick(uint32_t period_ms = 5);
     void setBrightness(uint8_t brightness);
     void setStatusMessage(const String& msg);
+    void setWifiConnected(bool connected);
 
     enum ScreenState {
         SCREEN_HOME,   // weather + quiet airspace panel
@@ -102,12 +103,14 @@ private:
     lv_obj_t* label_airspace_range_  = nullptr;
 
     // --- Radar screen widgets ---
-    lv_obj_t* radar_circle_     = nullptr;
-    lv_obj_t* radar_coastline_  = nullptr;   // lv_line, full coastline
-    lv_point_precise_t radar_pts_[33]   = {};
-    lv_obj_t* label_radar_count_ = nullptr;
-    lv_obj_t* label_radar_time_  = nullptr;
-    lv_obj_t* label_radar_date_  = nullptr;
+    lv_obj_t* radar_circle_          = nullptr;
+    lv_obj_t* radar_coastline_       = nullptr;
+    lv_point_precise_t radar_pts_[33] = {};
+    lv_obj_t* label_radar_count_      = nullptr;
+    lv_obj_t* label_radar_time_       = nullptr;
+    lv_obj_t* label_radar_date_       = nullptr;
+    lv_obj_t* label_radar_status_left_ = nullptr;
+    lv_obj_t* label_radar_status_live_ = nullptr;
 
     RadarBlip       radar_blips_[Config::MAX_AIRCRAFT];
     lv_obj_t*       list_container_    = nullptr;
@@ -121,6 +124,7 @@ private:
     uint8_t       currentBrightness;
     bool          userDismissed_;
     bool          userRequestedRadar_;
+    bool          wifiConnected_ = true;
 
     // --- LVGL task / tick timer ---
     esp_timer_handle_t lvgl_tick_timer_  = nullptr;

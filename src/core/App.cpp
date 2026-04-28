@@ -116,6 +116,7 @@ void App::tick() {
     applyNightMode();
 
     wifiManager_.tick(now);
+    if (display_) display_->setWifiConnected(wifiManager_.isConnected());
     if (wifiManager_.justReconnected()) {
         if (display_) display_->setStatusMessage("WiFi reconnected");
         if (openSkyService_) openSkyService_->initialize();
