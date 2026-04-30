@@ -30,7 +30,8 @@ bool WiFiManager::connect() {
     }
 
     Serial.printf("[WiFi] Connecting to SSID: \"%s\"\n", Config::WIFI_SSID);
-    WiFi.disconnect(false);   // send proper deauth to AP before re-associating
+    WiFi.persistent(false);    // don't write credentials to NVS — flash writes disable cache
+    WiFi.disconnect(false);    // send proper deauth to AP before re-associating
     delay(100);
     WiFi.mode(WIFI_STA);
     WiFi.begin(Config::WIFI_SSID, Config::WIFI_PASSWORD);
@@ -109,12 +110,11 @@ void WiFiManager::applyCloudfareDns() {
 
 void WiFiManager::tick(uint32_t nowMs) {
     if (WiFi.status() == WL_CONNECTED) {
-        // DHCP renewal can silently overwrite our Cloudflare DNS back to router DNS.
-        // Re-apply every 30s so failed SSL connections don't permanently break DNS.
-        constexpr uint32_t DNS_REFRESH_INTERVAL = 30000;
-        if ((nowMs - lastDnsRefreshMs_) >= DNS_REFRESH_INTERVAL) {
-            applyCloudfareDns();
-        }
+        // Proactive 30s DNS re-apply removed — the DHCP event handler registered in
+        // connect() re-applies Cloudflare DNS immediately on every ARDUINO_EVENT_WIFI_STA_GOT_IP.
+        // The timer was firing 1–2s before every aircraft fetch, coinciding with the
+        // esp_netif IPC call (tcpip_api_call) that briefly disturbs the AXI bus and
+        // causes a 30-second periodic display glitch on the RGB parallel bus.
         return;
     }
 

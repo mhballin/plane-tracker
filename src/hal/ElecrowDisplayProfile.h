@@ -32,7 +32,7 @@ constexpr gpio_num_t PIN_VSYNC = GPIO_NUM_41;
 constexpr gpio_num_t PIN_HSYNC = GPIO_NUM_39;
 constexpr gpio_num_t PIN_PCLK = GPIO_NUM_0;
 
-constexpr uint32_t RGB_FREQ_WRITE = 15000000;
+constexpr uint32_t RGB_FREQ_WRITE = 10000000;  // 10 MHz (was 15) — lower bus bandwidth reduces OPI-PSRAM contention during WiFi TX
 constexpr uint8_t HSYNC_POLARITY = 0;
 constexpr uint16_t HSYNC_FRONT_PORCH = 8;
 constexpr uint16_t HSYNC_PULSE_WIDTH = 4;
@@ -55,6 +55,12 @@ constexpr gpio_num_t TOUCH_PIN_INT = GPIO_NUM_NC;
 constexpr gpio_num_t TOUCH_PIN_RST = GPIO_NUM_NC;
 constexpr i2c_port_t TOUCH_I2C_PORT = I2C_NUM_1;
 constexpr uint32_t TOUCH_I2C_FREQ = 400000;
+
+// microSD card — SPI bus, standard CrowPanel HMI 5.0 wiring
+constexpr int SD_CS   = 10;
+constexpr int SD_MOSI = 11;
+constexpr int SD_SCK  = 12;
+constexpr int SD_MISO = 13;
 
 }  // namespace Elecrow5Inch
 }  // namespace hal

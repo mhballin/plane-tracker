@@ -62,7 +62,7 @@ namespace Config {
     // ========================================
     constexpr unsigned long WEATHER_UPDATE_INTERVAL = 1800000;  // 30 minutes
     constexpr unsigned long PLANE_UPDATE_INTERVAL = 30000;      // 30 seconds
-    constexpr unsigned long DISPLAY_UPDATE_INTERVAL = 1000;     // 1 second
+    constexpr unsigned long DISPLAY_UPDATE_INTERVAL = 10000;    // 10 seconds
     constexpr unsigned long TOKEN_LIFETIME = 1800000;           // 30 minutes
     constexpr unsigned long HEALTH_UPDATE_INTERVAL = 2000;      // 2 seconds
 

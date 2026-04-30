@@ -6,46 +6,155 @@
 #include <ArduinoJson.h>
 #include "config/Config.h"
 
-// NVS namespace (max 15 chars)
-static constexpr char NVS_NS[] = "route_cache";
-
 RouteCache::RouteCache() {}
 
-bool RouteCache::lookupType(const String& icao24, String& typeOut) {
-    if (icao24.isEmpty()) return false;
-
-    String url = String("https://hexdb.io/api/v1/aircraft/") + icao24;
-
-    WiFiClientSecure client;
-    client.setInsecure();
-    HTTPClient http;
-    http.begin(client, url);
-    http.setTimeout(8000);
-
-    Serial.printf("[RouteCache] hexdb type GET %s\n", url.c_str());
-    int code = http.GET();
-    if (code != 200) {
-        Serial.printf("[RouteCache] hexdb type HTTP %d\n", code);
-        http.end();
-        return false;
+void RouteCache::setSDReady(bool ready) {
+    sdReady_ = ready;
+    if (ready) {
+        Serial.println("[RouteCache] SD ready — routes persist to /routes.dat");
+    } else {
+        Serial.println("[RouteCache] No SD card — session RAM cache only");
     }
-
-    String payload = http.getString();
-    http.end();
-
-    JsonDocument doc;
-    if (deserializeJson(doc, payload)) return false;
-
-    String mfr  = doc["Manufacturer"].as<String>();
-    String type = doc["Type"].as<String>();
-
-    if (mfr.isEmpty() || mfr == "null") return false;
-
-    typeOut = type.isEmpty() || type == "null" ? mfr : mfr + " " + type;
-    Serial.printf("[RouteCache] type: %s\n", typeOut.c_str());
-    return true;
 }
 
+// ============================================================
+// Shared field parser: "ORG|OrgCity|OrgCC|DST|DstCity|DstCC"
+// ============================================================
+static bool parseRouteFields(const String& data,
+                              String& origin, String& originCity, String& originCountry,
+                              String& destination, String& destinationCity, String& destinationCountry) {
+    int p1 = data.indexOf('|');
+    int p2 = data.indexOf('|', p1 + 1);
+    int p3 = data.indexOf('|', p2 + 1);
+    int p4 = data.indexOf('|', p3 + 1);
+    int p5 = data.indexOf('|', p4 + 1);
+
+    if (p1 <= 0) return false;
+
+    if (p5 > p4) {
+        origin             = data.substring(0, p1);
+        originCity         = data.substring(p1 + 1, p2);
+        originCountry      = data.substring(p2 + 1, p3);
+        destination        = data.substring(p3 + 1, p4);
+        destinationCity    = data.substring(p4 + 1, p5);
+        destinationCountry = data.substring(p5 + 1);
+    } else if (p3 > p2) {
+        origin             = data.substring(0, p1);
+        originCity         = data.substring(p1 + 1, p2);
+        originCountry      = "";
+        destination        = data.substring(p2 + 1, p3);
+        destinationCity    = data.substring(p3 + 1);
+        destinationCountry = "";
+    } else {
+        return false;
+    }
+    return !origin.isEmpty() && !destination.isEmpty();
+}
+
+// ============================================================
+// SD helpers
+// ============================================================
+
+bool RouteCache::readRouteFromSD(const String& callsign,
+                                  String& origin, String& destination,
+                                  String& originCity, String& originCountry,
+                                  String& destinationCity, String& destinationCountry) {
+    if (!sdReady_) return false;
+    File f = SD.open(ROUTES_FILE, FILE_READ);
+    if (!f) return false;
+
+    bool found = false;
+    while (f.available()) {
+        String line = f.readStringUntil('\n');
+        line.trim();
+        if (line.isEmpty()) continue;
+
+        // Line format: CALLSIGN|ORG|OrgCity|OrgCC|DST|DstCity|DstCC[|YYYYMMDD]
+        int p0 = line.indexOf('|');
+        if (p0 <= 0 || line.substring(0, p0) != callsign) continue;
+
+        String data = line.substring(p0 + 1);
+
+        // Strip trailing date field if present (8 digits at end)
+        int last = data.lastIndexOf('|');
+        if (last > 0) {
+            String tail = data.substring(last + 1);
+            tail.trim();
+            if (tail.length() == 8 && isdigit((unsigned char)tail[0])) {
+                data = data.substring(0, last);
+            }
+        }
+
+        found = parseRouteFields(data, origin, originCity, originCountry,
+                                  destination, destinationCity, destinationCountry);
+        break;
+    }
+    f.close();
+    return found;
+}
+
+void RouteCache::writeRouteToSD(const String& callsign,
+                                 const String& origin, const String& destination,
+                                 const String& originCity, const String& originCountry,
+                                 const String& destinationCity, const String& destinationCountry) {
+    if (!sdReady_ || callsign.isEmpty() || origin.isEmpty() || destination.isEmpty()) return;
+
+    char dateStr[9] = "";
+    struct tm ti;
+    if (getLocalTime(&ti) && ti.tm_year >= 120) {
+        strftime(dateStr, sizeof(dateStr), "%Y%m%d", &ti);
+    }
+
+    File f = SD.open(ROUTES_FILE, FILE_APPEND);
+    if (!f) { Serial.println("[RouteCache] SD route write failed"); return; }
+
+    f.print(callsign);        f.print('|');
+    f.print(origin);          f.print('|');
+    f.print(originCity);      f.print('|');
+    f.print(originCountry);   f.print('|');
+    f.print(destination);     f.print('|');
+    f.print(destinationCity); f.print('|');
+    f.print(destinationCountry);
+    if (strlen(dateStr) == 8) { f.print('|'); f.print(dateStr); }
+    f.print('\n');
+    f.close();
+}
+
+bool RouteCache::readTypeFromSD(const String& icao24, String& typeOut) {
+    if (!sdReady_) return false;
+    File f = SD.open(TYPES_FILE, FILE_READ);
+    if (!f) return false;
+
+    bool found = false;
+    while (f.available()) {
+        String line = f.readStringUntil('\n');
+        line.trim();
+        if (line.isEmpty()) continue;
+
+        // Line format: ICAO24|Type description
+        int p = line.indexOf('|');
+        if (p <= 0 || line.substring(0, p) != icao24) continue;
+
+        typeOut = line.substring(p + 1);
+        typeOut.trim();
+        found = !typeOut.isEmpty();
+        break;
+    }
+    f.close();
+    return found;
+}
+
+void RouteCache::writeTypeToSD(const String& icao24, const String& type) {
+    if (!sdReady_ || icao24.isEmpty() || type.isEmpty()) return;
+    File f = SD.open(TYPES_FILE, FILE_APPEND);
+    if (!f) { Serial.println("[RouteCache] SD type write failed"); return; }
+    f.print(icao24); f.print('|'); f.println(type);
+    f.close();
+}
+
+// ============================================================
+// IATA flight number conversion
+// ============================================================
 String RouteCache::toIataFlightNumber(const String& callsign) {
     if (callsign.length() < 4) return "";
     String prefix = callsign.substring(0, 3);
@@ -57,70 +166,115 @@ String RouteCache::toIataFlightNumber(const String& callsign) {
     return "";
 }
 
+// ============================================================
+// Aircraft type lookup: session RAM → SD → HTTP
+// ============================================================
+bool RouteCache::lookupType(const String& icao24, String& typeOut) {
+    if (icao24.isEmpty()) return false;
+
+    // 1. Session RAM
+    auto it = typeCache_.find(icao24);
+    if (it != typeCache_.end()) {
+        typeOut = it->second;
+        return !typeOut.isEmpty();
+    }
+
+    // 2. SD card (persists across reboots)
+    if (readTypeFromSD(icao24, typeOut)) {
+        typeCache_[icao24] = typeOut;
+        return true;
+    }
+
+    // 3. HTTP
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient http;
+    http.begin(client, String("https://hexdb.io/api/v1/aircraft/") + icao24);
+    http.setTimeout(8000);
+
+    int code = http.GET();
+    if (code != 200) {
+        Serial.printf("[RouteCache] type lookup failed (%d): %s\n", code, icao24.c_str());
+        http.end();
+        typeCache_[icao24] = "";
+        return false;
+    }
+
+    String payload = http.getString();
+    http.end();
+
+    JsonDocument doc;
+    if (deserializeJson(doc, payload)) { typeCache_[icao24] = ""; return false; }
+
+    String mfr  = doc["Manufacturer"].as<String>();
+    String type = doc["Type"].as<String>();
+
+    if (mfr.isEmpty() || mfr == "null") { typeCache_[icao24] = ""; return false; }
+
+    typeOut = (type.isEmpty() || type == "null") ? mfr : mfr + " " + type;
+    typeCache_[icao24] = typeOut;
+    writeTypeToSD(icao24, typeOut);
+    Serial.printf("[RouteCache] type: %s  %s\n", icao24.c_str(), typeOut.c_str());
+    return true;
+}
+
+// ============================================================
+// Route lookup: session RAM → SD → HTTP backends
+// ============================================================
 bool RouteCache::lookup(const String& callsign,
                          String& origin, String& destination,
                          String& originCity, String& originCountry,
                          String& destinationCity, String& destinationCountry) {
     if (callsign.isEmpty()) return false;
-
-    // Skip callsigns that returned 404 from all backends this session
     if (notFound_.count(callsign)) return false;
 
-    // Check NVS first
-    // New format (6 fields): "BOS|New York|US|LAX|Los Angeles|US"
-    // Old format (4 fields): "BOS|Boston Logan|LAX|Los Angeles Intl"
-    prefs_.begin(NVS_NS, true);
-    String cached = prefs_.getString(callsign.c_str(), "");
-    prefs_.end();
-
-    if (cached.length() > 0) {
-        int p1 = cached.indexOf('|');
-        int p2 = cached.indexOf('|', p1 + 1);
-        int p3 = cached.indexOf('|', p2 + 1);
-        int p4 = cached.indexOf('|', p3 + 1);
-        int p5 = cached.indexOf('|', p4 + 1);
-
-        if (p5 > p4) {
-            // New 6-field format
-            origin          = cached.substring(0, p1);
-            originCity      = cached.substring(p1 + 1, p2);
-            originCountry   = cached.substring(p2 + 1, p3);
-            destination     = cached.substring(p3 + 1, p4);
-            destinationCity = cached.substring(p4 + 1, p5);
-            destinationCountry = cached.substring(p5 + 1);
-            return true;
-        } else if (p3 > p2) {
-            // Old 4-field format — still usable, just no country
-            origin          = cached.substring(0, p1);
-            originCity      = cached.substring(p1 + 1, p2);
-            originCountry   = "";
-            destination     = cached.substring(p2 + 1, p3);
-            destinationCity = cached.substring(p3 + 1);
-            destinationCountry = "";
-            return true;
-        }
-    }
-
-    // 1. hexdb.io (free, best coverage, returns full city+country)
-    if (fetchFromHexdb(callsign, origin, destination, originCity, originCountry, destinationCity, destinationCountry)) {
-        store(callsign, origin, destination, originCity, originCountry, destinationCity, destinationCountry);
+    // 1. Session RAM
+    auto hit = routeHits_.find(callsign);
+    if (hit != routeHits_.end()) {
+        origin             = hit->second.origin;
+        destination        = hit->second.destination;
+        originCity         = hit->second.originCity;
+        originCountry      = hit->second.originCountry;
+        destinationCity    = hit->second.destinationCity;
+        destinationCountry = hit->second.destinationCountry;
         return true;
     }
 
-    // 2. adsbdb.com (free fallback)
-    if (fetchFromAdsbdb(callsign, origin, destination, originCity, originCountry, destinationCity, destinationCountry)) {
-        store(callsign, origin, destination, originCity, originCountry, destinationCity, destinationCountry);
+    auto cacheAndReturn = [&](const char* tag) -> bool {
+        routeHits_[callsign] = {origin, destination, originCity, originCountry,
+                                 destinationCity, destinationCountry};
+        Serial.printf("[RouteCache] route: %s  %s>%s (%s)\n",
+                      callsign.c_str(), origin.c_str(), destination.c_str(), tag);
         return true;
+    };
+
+    // 2. SD card
+    if (readRouteFromSD(callsign, origin, destination, originCity, originCountry,
+                         destinationCity, destinationCountry)) {
+        return cacheAndReturn("sd");
     }
 
-    // 3. AeroDataBox (paid fallback)
+    // 3. HTTP backends
+    if (fetchFromHexdb(callsign, origin, destination, originCity, originCountry,
+                        destinationCity, destinationCountry)) {
+        writeRouteToSD(callsign, origin, destination, originCity, originCountry,
+                        destinationCity, destinationCountry);
+        return cacheAndReturn("hexdb");
+    }
+    if (fetchFromAdsbdb(callsign, origin, destination, originCity, originCountry,
+                         destinationCity, destinationCountry)) {
+        writeRouteToSD(callsign, origin, destination, originCity, originCountry,
+                        destinationCity, destinationCountry);
+        return cacheAndReturn("adsbdb");
+    }
     String iataFlight = toIataFlightNumber(callsign);
     if (!iataFlight.isEmpty()) {
         String key = Config::AERODATABOX_API_KEY;
         if (key != "your-aerodatabox-api-key" && !key.isEmpty()) {
             if (fetchFromApi(iataFlight, origin, destination, originCity, destinationCity)) {
-                store(callsign, origin, destination, originCity, "", destinationCity, "");
-                return true;
+                writeRouteToSD(callsign, origin, destination, originCity, "",
+                                destinationCity, "");
+                return cacheAndReturn("aerodatabox");
             }
         }
     }
@@ -129,33 +283,9 @@ bool RouteCache::lookup(const String& callsign,
     return false;
 }
 
-void RouteCache::store(const String& callsign,
-                        const String& origin, const String& destination,
-                        const String& originCity, const String& originCountry,
-                        const String& destinationCity, const String& destinationCountry) {
-    if (callsign.length() > 15) {
-        Serial.printf("[RouteCache] Callsign too long for NVS key: %s\n", callsign.c_str());
-        return;
-    }
-    // New 6-field format: "BOS|New York|US|LAX|Los Angeles|US"
-    String value = origin + "|" + originCity + "|" + originCountry + "|"
-                 + destination + "|" + destinationCity + "|" + destinationCountry;
-    prefs_.begin(NVS_NS, false);
-    if (prefs_.putString(callsign.c_str(), value) == 0) {
-        Serial.println("[RouteCache] NVS full — skipping persist, existing entries preserved");
-    }
-    prefs_.end();
-    Serial.printf("[RouteCache] Stored: %s -> %s (%s, %s) -> %s (%s, %s)\n",
-                  callsign.c_str(),
-                  origin.c_str(), originCity.c_str(), originCountry.c_str(),
-                  destination.c_str(), destinationCity.c_str(), destinationCountry.c_str());
-}
-
-// ========================================
-// hexdb.io — free, best route coverage
-// GET https://hexdb.io/callsign-route?callsign=BAW100
-// Returns full airport objects with municipality + country_iso_name
-// ========================================
+// ============================================================
+// HTTP backend: hexdb.io
+// ============================================================
 bool RouteCache::fetchFromHexdb(const String& callsign,
                                   String& origin, String& destination,
                                   String& originCity, String& originCountry,
@@ -168,56 +298,38 @@ bool RouteCache::fetchFromHexdb(const String& callsign,
     http.begin(client, url);
     http.setTimeout(8000);
 
-    Serial.printf("[RouteCache] hexdb GET %s\n", url.c_str());
     int code = http.GET();
-
-    if (code != 200) {
-        Serial.printf("[RouteCache] hexdb HTTP %d\n", code);
-        http.end();
-        return false;
-    }
+    if (code != 200) { http.end(); return false; }
 
     String payload = http.getString();
     http.end();
 
     JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, payload);
-    if (err) {
-        Serial.printf("[RouteCache] hexdb JSON error: %s\n", err.c_str());
-        return false;
-    }
+    if (deserializeJson(doc, payload)) return false;
 
-    // hexdb response: { "callsign": "...", "flightroute": { "origin": {...}, "destination": {...} } }
     JsonObject fr = doc["flightroute"];
-    if (fr.isNull()) {
-        Serial.println("[RouteCache] hexdb: no flightroute in response");
-        return false;
-    }
+    if (fr.isNull()) return false;
 
     JsonObject org = fr["origin"];
     JsonObject dst = fr["destination"];
     if (org.isNull() || dst.isNull()) return false;
 
-    origin          = org["iata_code"].as<String>();
-    originCity      = org["municipality"].as<String>();
-    originCountry   = org["country_iso_name"].as<String>();
-    destination     = dst["iata_code"].as<String>();
-    destinationCity = dst["municipality"].as<String>();
+    origin             = org["iata_code"].as<String>();
+    originCity         = org["municipality"].as<String>();
+    originCountry      = org["country_iso_name"].as<String>();
+    destination        = dst["iata_code"].as<String>();
+    destinationCity    = dst["municipality"].as<String>();
     destinationCountry = dst["country_iso_name"].as<String>();
 
     if (origin.isEmpty() || origin == "null" || destination.isEmpty() || destination == "null") {
         return false;
     }
-
-    Serial.printf("[RouteCache] hexdb: %s (%s, %s) -> %s (%s, %s)\n",
-                  origin.c_str(), originCity.c_str(), originCountry.c_str(),
-                  destination.c_str(), destinationCity.c_str(), destinationCountry.c_str());
     return true;
 }
 
-// ========================================
-// adsbdb.com fallback
-// ========================================
+// ============================================================
+// HTTP backend: adsbdb.com
+// ============================================================
 bool RouteCache::fetchFromAdsbdb(const String& callsign,
                                   String& origin, String& destination,
                                   String& originCity, String& originCountry,
@@ -230,25 +342,14 @@ bool RouteCache::fetchFromAdsbdb(const String& callsign,
     http.begin(client, url);
     http.setTimeout(8000);
 
-    Serial.printf("[RouteCache] adsbdb GET %s\n", url.c_str());
     int code = http.GET();
-
-    if (code != 200) {
-        Serial.printf("[RouteCache] adsbdb HTTP %d\n", code);
-        http.end();
-        return false;
-    }
+    if (code != 200) { http.end(); return false; }
 
     String payload = http.getString();
     http.end();
 
     JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, payload);
-    if (err) {
-        Serial.printf("[RouteCache] adsbdb JSON error: %s\n", err.c_str());
-        return false;
-    }
-
+    if (deserializeJson(doc, payload)) return false;
     if (!doc["response"].is<JsonObject>()) return false;
 
     JsonObject fr = doc["response"]["flightroute"];
@@ -258,26 +359,22 @@ bool RouteCache::fetchFromAdsbdb(const String& callsign,
     JsonObject dst = fr["destination"];
     if (org.isNull() || dst.isNull()) return false;
 
-    origin          = org["iata_code"].as<String>();
-    originCity      = org["municipality"].as<String>();
-    originCountry   = org["country_iso_name"].as<String>();
-    destination     = dst["iata_code"].as<String>();
-    destinationCity = dst["municipality"].as<String>();
+    origin             = org["iata_code"].as<String>();
+    originCity         = org["municipality"].as<String>();
+    originCountry      = org["country_iso_name"].as<String>();
+    destination        = dst["iata_code"].as<String>();
+    destinationCity    = dst["municipality"].as<String>();
     destinationCountry = dst["country_iso_name"].as<String>();
 
     if (origin.isEmpty() || origin == "null" || destination.isEmpty() || destination == "null") {
         return false;
     }
-
-    Serial.printf("[RouteCache] adsbdb: %s (%s, %s) -> %s (%s, %s)\n",
-                  origin.c_str(), originCity.c_str(), originCountry.c_str(),
-                  destination.c_str(), destinationCity.c_str(), destinationCountry.c_str());
     return true;
 }
 
-// ========================================
-// AeroDataBox paid fallback
-// ========================================
+// ============================================================
+// HTTP backend: AeroDataBox (paid fallback)
+// ============================================================
 bool RouteCache::fetchFromApi(const String& iataFlightNumber,
                                String& origin, String& destination,
                                String& originCity, String& destinationCity) {
@@ -299,24 +396,14 @@ bool RouteCache::fetchFromApi(const String& iataFlightNumber,
     http.addHeader("x-rapidapi-key",  Config::AERODATABOX_API_KEY);
     http.addHeader("x-rapidapi-host", "aerodatabox.p.rapidapi.com");
 
-    Serial.printf("[RouteCache] AeroDataBox GET %s\n", url.c_str());
     int code = http.GET();
-
-    if (code != 200) {
-        Serial.printf("[RouteCache] AeroDataBox HTTP %d\n", code);
-        http.end();
-        return false;
-    }
+    if (code != 200) { http.end(); return false; }
 
     String payload = http.getString();
     http.end();
 
     JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, payload);
-    if (err) {
-        Serial.printf("[RouteCache] AeroDataBox JSON error: %s\n", err.c_str());
-        return false;
-    }
+    if (deserializeJson(doc, payload)) return false;
 
     JsonArray arr = doc.as<JsonArray>();
     if (arr.isNull() || arr.size() == 0) {
@@ -337,9 +424,5 @@ bool RouteCache::fetchFromApi(const String& iataFlightNumber,
     }
 
     if (origin.isEmpty() || destination.isEmpty()) return false;
-
-    Serial.printf("[RouteCache] AeroDataBox: %s (%s) -> %s (%s)\n",
-                  origin.c_str(), originCity.c_str(),
-                  destination.c_str(), destinationCity.c_str());
     return true;
 }

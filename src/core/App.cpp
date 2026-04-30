@@ -1,8 +1,11 @@
 #include "core/App.h"
 
 #include <time.h>
+#include <SPI.h>
+#include <SD.h>
 
 #include "config/Config.h"
+#include "hal/ElecrowDisplayProfile.h"
 
 namespace core {
 
@@ -92,6 +95,21 @@ bool App::begin() {
 
     routeCache_ = new RouteCache();
 
+    // Init SD card on the dedicated SPI bus (GPIO 10-13, standard CrowPanel wiring).
+    // Runs after WiFi so SPI bus arbitration is settled; SD doesn't need network.
+    SPI.begin(hal::Elecrow5Inch::SD_SCK,
+              hal::Elecrow5Inch::SD_MISO,
+              hal::Elecrow5Inch::SD_MOSI,
+              hal::Elecrow5Inch::SD_CS);
+    bool sdOk = SD.begin(hal::Elecrow5Inch::SD_CS, SPI);
+    if (sdOk) {
+        Serial.printf("[SD] Card mounted (%llu MB)\n",
+                      SD.cardSize() / (1024ULL * 1024ULL));
+    } else {
+        Serial.println("[SD] Card not found — routes use session RAM only");
+    }
+    routeCache_->setSDReady(sdOk);
+
     setupTasks();
 
     // Tasks registered with runImmediately=true so the first App::tick() fires
@@ -157,6 +175,9 @@ void App::tick() {
     if (scheduler_.due(aircraftTaskId_, now)) {
         updateAircraft();
         scheduler_.markRun(aircraftTaskId_, now);
+        // Immediately refresh display with new aircraft data and trigger route/type lookups
+        updateDisplay();
+        scheduler_.markRun(displayTaskId_, now);
     }
 
     if (scheduler_.due(displayTaskId_, now)) {
@@ -189,7 +210,11 @@ void App::updateWeather() {
         return;
     }
 
-    if (weatherService_->getWeather(currentWeather_)) {
+    if (display_) display_->freezeRendering();
+    bool weatherOk = weatherService_->getWeather(currentWeather_);
+    if (display_) display_->unfreezeRendering();
+
+    if (weatherOk) {
         if (display_) {
             display_->setStatusMessage("Weather updated");
         }
@@ -211,9 +236,50 @@ void App::updateAircraft() {
         return;
     }
 
-    currentAircraftCount_ = openSkyService_->fetchAircraft(aircraftList_, Config::MAX_AIRCRAFT);
-    if (currentAircraftCount_ < 0) {
-        currentAircraftCount_ = 0;
+    // fetchAircraft() resets routeLookupDone/typeLookupDone and clears all route
+    // fields unconditionally. Snapshot resolved data by callsign so we can restore
+    // it for aircraft that persist across the refresh instead of re-fetching.
+    struct RouteSnapshot {
+        String callsign, origin, destination, originDisplay, destinationDisplay, aircraftType;
+        bool routeLookupDone, typeLookupDone;
+    };
+    RouteSnapshot snapshots[Config::MAX_AIRCRAFT];
+    int snapCount = 0;
+    for (int i = 0; i < currentAircraftCount_ && i < Config::MAX_AIRCRAFT; i++) {
+        const Aircraft& a = aircraftList_[i];
+        if (a.valid && !a.callsign.isEmpty()) {
+            snapshots[snapCount++] = {
+                a.callsign, a.origin, a.destination,
+                a.originDisplay, a.destinationDisplay, a.aircraftType,
+                a.routeLookupDone, a.typeLookupDone
+            };
+        }
+    }
+
+    Serial.printf("[App] aircraft fetch BEGIN t=%lu ms\n", millis());
+    if (display_) display_->freezeRendering();
+    int newCount = openSkyService_->fetchAircraft(aircraftList_, Config::MAX_AIRCRAFT);
+    if (display_) display_->unfreezeRendering();
+    Serial.printf("[App] aircraft fetch END   t=%lu ms  count=%d\n", millis(), newCount);
+
+    currentAircraftCount_ = newCount < 0 ? 0 : newCount;
+
+    // Restore route/type data for aircraft still in range after the refresh
+    for (int i = 0; i < currentAircraftCount_; i++) {
+        Aircraft& a = aircraftList_[i];
+        if (a.callsign.isEmpty()) continue;
+        for (int j = 0; j < snapCount; j++) {
+            if (snapshots[j].callsign == a.callsign) {
+                a.origin             = snapshots[j].origin;
+                a.destination        = snapshots[j].destination;
+                a.originDisplay      = snapshots[j].originDisplay;
+                a.destinationDisplay = snapshots[j].destinationDisplay;
+                a.aircraftType       = snapshots[j].aircraftType;
+                a.routeLookupDone    = snapshots[j].routeLookupDone;
+                a.typeLookupDone     = snapshots[j].typeLookupDone;
+                break;
+            }
+        }
     }
 
     health_.setAircraftCount(static_cast<uint16_t>(currentAircraftCount_));
@@ -243,8 +309,11 @@ void App::updateDisplay() {
 
                 if (!a.routeLookupDone) {
                     String org, dst, orgCity, orgCountry, dstCity, dstCountry;
-                    if (routeCache_->lookup(a.callsign, org, dst, orgCity, orgCountry,
-                                            dstCity, dstCountry)) {
+                    display_->freezeRendering();
+                    bool routeFound = routeCache_->lookup(a.callsign, org, dst, orgCity, orgCountry,
+                                                         dstCity, dstCountry);
+                    display_->unfreezeRendering();
+                    if (routeFound) {
                         a.origin             = org;
                         a.destination        = dst;
                         a.originDisplay      = orgCity.isEmpty() ? org
@@ -258,7 +327,10 @@ void App::updateDisplay() {
 
                 if (!a.typeLookupDone && !a.icao24.isEmpty()) {
                     String typeStr;
-                    if (routeCache_->lookupType(a.icao24, typeStr)) {
+                    display_->freezeRendering();
+                    bool typeFound = routeCache_->lookupType(a.icao24, typeStr);
+                    display_->unfreezeRendering();
+                    if (typeFound) {
                         a.aircraftType = typeStr;
                     }
                     a.typeLookupDone = true;

@@ -1,53 +1,67 @@
 // src/services/RouteCache.h
-// NVS-backed route cache + AeroDataBox HTTP lookup.
-// Routes are cached forever (airline routes don't change).
+// SD-card-backed route + type cache with session RAM layer.
+// Lookup order: session RAM → SD file → HTTP backends.
+// SD files survive reboots and have no practical size limit.
 #pragma once
 #include <Arduino.h>
-#include <Preferences.h>
+#include <SD.h>
+#include <FS.h>
+#include <map>
 #include <set>
 
 class RouteCache {
 public:
     RouteCache();
 
-    /// Look up aircraft manufacturer+type by ICAO hex (icao24) via hexdb.io.
-    /// Returns true and populates typeOut (e.g. "Boeing 737-800") on success.
+    // Call once after SD.begin() succeeds. Enables SD persistence.
+    void setSDReady(bool ready);
+
+    // Look up aircraft type by ICAO hex. Populates typeOut ("Boeing 737-800").
     bool lookupType(const String& icao24, String& typeOut);
 
-    /// Check NVS, then try hexdb.io → adsbdb → AeroDataBox.
-    /// Returns true and populates all fields on success.
-    /// origin/destination are IATA codes; city/country are human-readable.
+    // Look up flight route by callsign.
+    // Returns true and fills all fields on success.
     bool lookup(const String& callsign,
                 String& origin, String& destination,
                 String& originCity, String& originCountry,
                 String& destinationCity, String& destinationCountry);
 
-    /// Store a resolved route in NVS.
-    void store(const String& callsign,
-               const String& origin, const String& destination,
-               const String& originCity, const String& originCountry,
-               const String& destinationCity, const String& destinationCountry);
-
 private:
-    Preferences prefs_;
-    std::set<String> notFound_;  // session-level negative cache — skip callsigns all backends returned 404
+    static constexpr const char* ROUTES_FILE = "/routes.dat";
+    static constexpr const char* TYPES_FILE  = "/types.dat";
 
-    /// Convert ICAO callsign prefix to IATA flight number (e.g. "UAL1234" -> "UA1234").
+    struct RouteEntry {
+        String origin, destination, originCity, originCountry, destinationCity, destinationCountry;
+    };
+
+    bool sdReady_ = false;
+
+    std::set<String>             notFound_;   // session negative cache
+    std::map<String, RouteEntry> routeHits_;  // session positive cache (callsign → route)
+    std::map<String, String>     typeCache_;  // session positive cache (icao24 → type)
+
+    // SD helpers
+    bool readRouteFromSD(const String& callsign,
+                         String& origin, String& destination,
+                         String& originCity, String& originCountry,
+                         String& destinationCity, String& destinationCountry);
+    void writeRouteToSD(const String& callsign,
+                        const String& origin, const String& destination,
+                        const String& originCity, const String& originCountry,
+                        const String& destinationCity, const String& destinationCountry);
+    bool readTypeFromSD(const String& icao24, String& typeOut);
+    void writeTypeToSD(const String& icao24, const String& type);
+
     String toIataFlightNumber(const String& callsign);
 
-    /// HTTP fetch from hexdb.io (free, no key, best coverage). Returns true on success.
     bool fetchFromHexdb(const String& callsign,
                         String& origin, String& destination,
                         String& originCity, String& originCountry,
                         String& destinationCity, String& destinationCountry);
-
-    /// HTTP fetch from adsbdb.com (free, no key, ICAO callsign direct). Returns true on success.
     bool fetchFromAdsbdb(const String& callsign,
                          String& origin, String& destination,
                          String& originCity, String& originCountry,
                          String& destinationCity, String& destinationCountry);
-
-    /// HTTP fetch from AeroDataBox (paid fallback). Returns true on success.
     bool fetchFromApi(const String& iataFlightNumber,
                       String& origin, String& destination,
                       String& originCity, String& destinationCity);

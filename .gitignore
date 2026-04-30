@@ -16,6 +16,8 @@
 # Logs
 logs/*.log
 
+# Docs
+CLAUDE.md
 
 # PlatformIO environment folders
 .pioenvs/

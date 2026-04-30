@@ -3,6 +3,7 @@
 
 #include "OpenSkyService.h"
 #include "data/AirlineTable.h"
+#include <WiFi.h>
 #include <mbedtls/platform.h>
 #include <esp_heap_caps.h>
 using namespace Config;
@@ -32,20 +33,27 @@ bool OpenSkyService::fetchAccessToken() {
     }
 
     // Redirect mbedTLS allocations to PSRAM exactly once.
-    // Default mbedTLS buffers are 2×16KB = 32KB of contiguous SRAM, which fails
-    // (MBEDTLS_ERR_SSL_ALLOC_FAILED) after LVGL DMA buffers fragment the heap.
-    // PSRAM has 8MB free and needs no DMA capability for SSL record buffers.
-    static bool sslPsramInit = false;
-    if (!sslPsramInit) {
+    // mbedTLS allocates ~32KB (2×16KB TLS record buffers) per SSL session.
+    // Previously these were forced to PSRAM to avoid SRAM heap fragmentation,
+    // but PSRAM mbedTLS buffers cause the LCD GDMA to compete with mbedTLS on
+    // the shared OPI PSRAM bus during TLS crypto, producing 30-second display
+    // glitches that coincide with every aircraft fetch.
+    //
+    // SRAM-first: the new IDF-based display architecture keeps framebuffers in
+    // PSRAM (IDF-allocated, not SRAM), so SRAM is no longer fragmented by LVGL.
+    // calloc() returns SRAM → no PSRAM bus contention with the LCD GDMA.
+    // Falls back to PSRAM only if SRAM is full, keeping SSL functional.
+    static bool sslInit = false;
+    if (!sslInit) {
         mbedtls_platform_set_calloc_free(
             [](size_t n, size_t size) -> void* {
-                void* p = heap_caps_calloc(n, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-                return p ? p : calloc(n, size);  // fallback to SRAM if PSRAM full
+                void* p = calloc(n, size);  // SRAM first — no bus contention with LCD GDMA
+                return p ? p : heap_caps_calloc(n, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
             },
             free
         );
-        sslPsramInit = true;
-        Serial.printf("[SSL] mbedTLS → PSRAM  heap: %lu B  max: %lu B\n",
+        sslInit = true;
+        Serial.printf("[SSL] mbedTLS → SRAM-first  heap: %lu B  max: %lu B\n",
                       (unsigned long)ESP.getFreeHeap(),
                       (unsigned long)ESP.getMaxAllocHeap());
     }
@@ -182,6 +190,7 @@ int OpenSkyService::fetchAircraft(Aircraft* aircraftList, int maxAircraft) {
                         plane.squawk        = state[14].isNull() ? "" : state[14].as<String>();
                         plane.valid          = true;
                         plane.routeLookupDone    = false;
+                        plane.typeLookupDone     = false;
                         plane.origin             = "";
                         plane.destination        = "";
                         plane.originDisplay      = "";

@@ -28,12 +28,25 @@ def load_env_file(path=".env"):
 load_env_file()
 
 
-def exclude_helium_files(node):
-    """Filter out ARM Helium assembly files from LVGL"""
-    return None if "helium" in node.get_path() else node
+def exclude_arm_asm_files(node):
+    """Filter out ARM Helium/NEON assembly files that don't assemble on Xtensa"""
+    path = node.get_path()
+    if "helium" in path or "neon" in path:
+        return None
+    return node
 
-# Filter source files to exclude Helium
-env.AddBuildMiddleware(exclude_helium_files, "*")
+env.AddBuildMiddleware(exclude_arm_asm_files, "*")
+
+# Arduino-ESP32 3.x split WiFi → Network library; the platform builder doesn't
+# automatically add Network/src to the path, so we do it here.
+_fw_libs = os.path.join(
+    env.subst("$PROJECT_PACKAGES_DIR"),
+    "framework-arduinoespressif32", "libraries"
+)
+for _lib in ("Network", "NetworkClientSecure"):
+    _src = os.path.join(_fw_libs, _lib, "src")
+    if os.path.isdir(_src):
+        env.Append(CPPPATH=[_src])
 
 
 def generate_credentials(env):

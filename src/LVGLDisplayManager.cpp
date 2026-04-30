@@ -12,98 +12,43 @@
 #endif
 #include "utils/GeoUtils.h"
 #include "data/CoastlinePortland.h"
-#include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
-#include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
-
-// Define LGFX class with Elecrow 5" RGB panel configuration
+// Touch + backlight only — the RGB display is driven by IDF esp_lcd directly.
+// Panel_Device has no display bus: init() only initialises touch and PWM backlight.
 class LGFX_Panel : public lgfx::LGFX_Device {
 public:
-    lgfx::Bus_RGB _bus_instance;
-    lgfx::Panel_RGB _panel_instance;
-    lgfx::Light_PWM _light_instance;
-    lgfx::Touch_GT911 _touch_instance;
+    lgfx::Panel_NULL    _panel_instance;
+    lgfx::Light_PWM     _light_instance;
+    lgfx::Touch_GT911   _touch_instance;
 
-    LGFX_Panel(void) {
-        // Configure panel
+    LGFX_Panel() {
         {
             auto cfg = _panel_instance.config();
-            cfg.memory_width = hal::Elecrow5Inch::PANEL_WIDTH;
+            cfg.memory_width  = hal::Elecrow5Inch::PANEL_WIDTH;
             cfg.memory_height = hal::Elecrow5Inch::PANEL_HEIGHT;
-            cfg.panel_width = hal::Elecrow5Inch::PANEL_WIDTH;
-            cfg.panel_height = hal::Elecrow5Inch::PANEL_HEIGHT;
+            cfg.panel_width   = hal::Elecrow5Inch::PANEL_WIDTH;
+            cfg.panel_height  = hal::Elecrow5Inch::PANEL_HEIGHT;
             cfg.offset_x = 0; cfg.offset_y = 0;
             _panel_instance.config(cfg);
         }
-        
-        // Enable PSRAM
-        {
-            auto cfg = _panel_instance.config_detail();
-            cfg.use_psram = hal::Elecrow5Inch::USE_PSRAM_FRAMEBUFFER;
-            _panel_instance.config_detail(cfg);
-        }
-        
-        // Configure RGB bus
-        {
-            auto cfg = _bus_instance.config();
-            cfg.panel = &_panel_instance;
-            cfg.pin_d0 = hal::Elecrow5Inch::PIN_D0;
-            cfg.pin_d1 = hal::Elecrow5Inch::PIN_D1;
-            cfg.pin_d2 = hal::Elecrow5Inch::PIN_D2;
-            cfg.pin_d3 = hal::Elecrow5Inch::PIN_D3;
-            cfg.pin_d4 = hal::Elecrow5Inch::PIN_D4;
-            cfg.pin_d5 = hal::Elecrow5Inch::PIN_D5;
-            cfg.pin_d6 = hal::Elecrow5Inch::PIN_D6;
-            cfg.pin_d7 = hal::Elecrow5Inch::PIN_D7;
-            cfg.pin_d8 = hal::Elecrow5Inch::PIN_D8;
-            cfg.pin_d9 = hal::Elecrow5Inch::PIN_D9;
-            cfg.pin_d10 = hal::Elecrow5Inch::PIN_D10;
-            cfg.pin_d11 = hal::Elecrow5Inch::PIN_D11;
-            cfg.pin_d12 = hal::Elecrow5Inch::PIN_D12;
-            cfg.pin_d13 = hal::Elecrow5Inch::PIN_D13;
-            cfg.pin_d14 = hal::Elecrow5Inch::PIN_D14;
-            cfg.pin_d15 = hal::Elecrow5Inch::PIN_D15;
-            cfg.pin_henable = hal::Elecrow5Inch::PIN_HENABLE;
-            cfg.pin_vsync = hal::Elecrow5Inch::PIN_VSYNC;
-            cfg.pin_hsync = hal::Elecrow5Inch::PIN_HSYNC;
-            cfg.pin_pclk = hal::Elecrow5Inch::PIN_PCLK;
-            cfg.freq_write = hal::Elecrow5Inch::RGB_FREQ_WRITE;
-            cfg.hsync_polarity = hal::Elecrow5Inch::HSYNC_POLARITY;
-            cfg.hsync_front_porch = hal::Elecrow5Inch::HSYNC_FRONT_PORCH;
-            cfg.hsync_pulse_width = hal::Elecrow5Inch::HSYNC_PULSE_WIDTH;
-            cfg.hsync_back_porch = hal::Elecrow5Inch::HSYNC_BACK_PORCH;
-            cfg.vsync_polarity = hal::Elecrow5Inch::VSYNC_POLARITY;
-            cfg.vsync_front_porch = hal::Elecrow5Inch::VSYNC_FRONT_PORCH;
-            cfg.vsync_pulse_width = hal::Elecrow5Inch::VSYNC_PULSE_WIDTH;
-            cfg.vsync_back_porch = hal::Elecrow5Inch::VSYNC_BACK_PORCH;
-            cfg.pclk_active_neg = hal::Elecrow5Inch::PCLK_ACTIVE_NEG;
-            cfg.de_idle_high = hal::Elecrow5Inch::DE_IDLE_HIGH;
-            cfg.pclk_idle_high = hal::Elecrow5Inch::PCLK_IDLE_HIGH;
-            _bus_instance.config(cfg);
-        }
-        _panel_instance.setBus(&_bus_instance);
-        
-        // Configure backlight
         {
             auto cfg = _light_instance.config();
             cfg.pin_bl = hal::Elecrow5Inch::PIN_BACKLIGHT;
             _light_instance.config(cfg);
         }
         _panel_instance.light(&_light_instance);
-        
-        // Configure touch (GT911)
         {
             auto cfg = _touch_instance.config();
-            cfg.x_min = 0;
-            cfg.x_max = hal::Elecrow5Inch::PANEL_WIDTH;
-            cfg.y_min = 0;
-            cfg.y_max = hal::Elecrow5Inch::PANEL_HEIGHT;
-            cfg.i2c_addr = hal::Elecrow5Inch::TOUCH_I2C_ADDR;
-            cfg.pin_sda = hal::Elecrow5Inch::TOUCH_PIN_SDA;
-            cfg.pin_scl = hal::Elecrow5Inch::TOUCH_PIN_SCL;
-            cfg.pin_int = hal::Elecrow5Inch::TOUCH_PIN_INT;
-            cfg.pin_rst = hal::Elecrow5Inch::TOUCH_PIN_RST;
-            cfg.i2c_port = hal::Elecrow5Inch::TOUCH_I2C_PORT;
-            cfg.freq = hal::Elecrow5Inch::TOUCH_I2C_FREQ;
+            cfg.x_min      = 0;
+            cfg.x_max      = hal::Elecrow5Inch::PANEL_WIDTH;
+            cfg.y_min      = 0;
+            cfg.y_max      = hal::Elecrow5Inch::PANEL_HEIGHT;
+            cfg.i2c_addr   = hal::Elecrow5Inch::TOUCH_I2C_ADDR;
+            cfg.pin_sda    = hal::Elecrow5Inch::TOUCH_PIN_SDA;
+            cfg.pin_scl    = hal::Elecrow5Inch::TOUCH_PIN_SCL;
+            cfg.pin_int    = hal::Elecrow5Inch::TOUCH_PIN_INT;
+            cfg.pin_rst    = hal::Elecrow5Inch::TOUCH_PIN_RST;
+            cfg.i2c_port   = hal::Elecrow5Inch::TOUCH_I2C_PORT;
+            cfg.freq       = hal::Elecrow5Inch::TOUCH_I2C_FREQ;
             cfg.bus_shared = false;
             _touch_instance.config(cfg);
             _panel_instance.setTouch(&_touch_instance);
@@ -146,13 +91,16 @@ LVGLDisplayManager::LVGLDisplayManager()
     , currentBrightness(255)
     , userDismissed_(false)
     , userRequestedRadar_(false)
+    , panel_handle_(nullptr)
+    , sem_vsync_end_(nullptr)
+    , fb1_(nullptr)
+    , fb2_(nullptr)
 {
     s_instance = this;
 }
 
 // Destructor
 LVGLDisplayManager::~LVGLDisplayManager() {
-    // Acquire lock so the task completes any in-progress handler cycle before being deleted
     lv_lock();
     if (lvgl_task_handle_) {
         vTaskDelete(lvgl_task_handle_);
@@ -164,6 +112,14 @@ LVGLDisplayManager::~LVGLDisplayManager() {
         esp_timer_delete(lvgl_tick_timer_);
         lvgl_tick_timer_ = nullptr;
     }
+    if (panel_handle_) {
+        esp_lcd_panel_del(panel_handle_);
+        panel_handle_ = nullptr;
+    }
+    if (sem_vsync_end_) {
+        vSemaphoreDelete(sem_vsync_end_);
+        sem_vsync_end_ = nullptr;
+    }
     delete lcd;
     lcd = nullptr;
     s_instance = nullptr;
@@ -173,17 +129,98 @@ LVGLDisplayManager::~LVGLDisplayManager() {
 // Call this BEFORE WiFi init so the task stack is allocated while internal SRAM is
 // still available (WiFi DMA buffers also need internal SRAM).
 bool LVGLDisplayManager::initHardware() {
-    Serial.println("[LVGL] Initializing hardware...");
+    Serial.println("[LVGL] Initializing hardware (IDF double-buffer)...");
 
-    lcd = new LGFX_Panel();
-    if (!lcd) {
-        Serial.println("[LVGL] Failed to allocate LGFX");
+    sem_vsync_end_ = xSemaphoreCreateBinary();
+    if (!sem_vsync_end_) {
+        Serial.println("[LVGL] Failed to create vsync semaphore");
         return false;
     }
-    lcd->init();
-    lcd->setRotation(hal::Elecrow5Inch::PANEL_ROTATION);
-    lcd->setBrightness(currentBrightness);
-    lcd->fillScreen(TFT_BLACK);
+
+    // --- IDF RGB panel: two PSRAM framebuffers, VSYNC-synced swap ---
+    esp_lcd_rgb_panel_config_t panel_config = {};
+    panel_config.clk_src                         = LCD_CLK_SRC_DEFAULT;
+    panel_config.timings.pclk_hz                 = hal::Elecrow5Inch::RGB_FREQ_WRITE;
+    panel_config.timings.h_res                   = hal::Elecrow5Inch::PANEL_WIDTH;
+    panel_config.timings.v_res                   = hal::Elecrow5Inch::PANEL_HEIGHT;
+    panel_config.timings.hsync_pulse_width       = hal::Elecrow5Inch::HSYNC_PULSE_WIDTH;
+    panel_config.timings.hsync_back_porch        = hal::Elecrow5Inch::HSYNC_BACK_PORCH;
+    panel_config.timings.hsync_front_porch       = hal::Elecrow5Inch::HSYNC_FRONT_PORCH;
+    panel_config.timings.vsync_pulse_width       = hal::Elecrow5Inch::VSYNC_PULSE_WIDTH;
+    panel_config.timings.vsync_back_porch        = hal::Elecrow5Inch::VSYNC_BACK_PORCH;
+    panel_config.timings.vsync_front_porch       = hal::Elecrow5Inch::VSYNC_FRONT_PORCH;
+    // Polarity: HAL 0 = active LOW → IDF "idle high" → idle_low = 0
+    panel_config.timings.flags.hsync_idle_low    = hal::Elecrow5Inch::HSYNC_POLARITY;
+    panel_config.timings.flags.vsync_idle_low    = hal::Elecrow5Inch::VSYNC_POLARITY;
+    panel_config.timings.flags.de_idle_high      = hal::Elecrow5Inch::DE_IDLE_HIGH;
+    panel_config.timings.flags.pclk_active_neg   = hal::Elecrow5Inch::PCLK_ACTIVE_NEG;
+    panel_config.timings.flags.pclk_idle_high    = hal::Elecrow5Inch::PCLK_IDLE_HIGH;
+    panel_config.data_width                      = 16;   // RGB565: 16 data lines
+    panel_config.bits_per_pixel                  = 16;
+    panel_config.num_fbs                         = 2;    // true double-buffering
+    // bounce_buffer_size_px is intentionally 0 (GDMA reads PSRAM directly).
+    //
+    // Setting this to e.g. 800*10 would reduce PSRAM bus contention artifacts but
+    // causes a "Cache disabled but cached memory region accessed" hard fault on boot:
+    // the IDF bounce-buffer copy task accesses PSRAM while WiFi init briefly disables
+    // the shared flash/PSRAM cache. Fixing this requires CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
+    // (places code in PSRAM so cache-disable is safe), which is a framework-level
+    // sdkconfig change not yet applied to this project.
+    panel_config.bounce_buffer_size_px           = 0;
+    panel_config.psram_trans_align               = 64;
+    panel_config.hsync_gpio_num                  = hal::Elecrow5Inch::PIN_HSYNC;
+    panel_config.vsync_gpio_num                  = hal::Elecrow5Inch::PIN_VSYNC;
+    panel_config.de_gpio_num                     = hal::Elecrow5Inch::PIN_HENABLE;
+    panel_config.pclk_gpio_num                   = hal::Elecrow5Inch::PIN_PCLK;
+    panel_config.disp_gpio_num                   = GPIO_NUM_NC;
+    panel_config.data_gpio_nums[0]               = hal::Elecrow5Inch::PIN_D0;
+    panel_config.data_gpio_nums[1]               = hal::Elecrow5Inch::PIN_D1;
+    panel_config.data_gpio_nums[2]               = hal::Elecrow5Inch::PIN_D2;
+    panel_config.data_gpio_nums[3]               = hal::Elecrow5Inch::PIN_D3;
+    panel_config.data_gpio_nums[4]               = hal::Elecrow5Inch::PIN_D4;
+    panel_config.data_gpio_nums[5]               = hal::Elecrow5Inch::PIN_D5;
+    panel_config.data_gpio_nums[6]               = hal::Elecrow5Inch::PIN_D6;
+    panel_config.data_gpio_nums[7]               = hal::Elecrow5Inch::PIN_D7;
+    panel_config.data_gpio_nums[8]               = hal::Elecrow5Inch::PIN_D8;
+    panel_config.data_gpio_nums[9]               = hal::Elecrow5Inch::PIN_D9;
+    panel_config.data_gpio_nums[10]              = hal::Elecrow5Inch::PIN_D10;
+    panel_config.data_gpio_nums[11]              = hal::Elecrow5Inch::PIN_D11;
+    panel_config.data_gpio_nums[12]              = hal::Elecrow5Inch::PIN_D12;
+    panel_config.data_gpio_nums[13]              = hal::Elecrow5Inch::PIN_D13;
+    panel_config.data_gpio_nums[14]              = hal::Elecrow5Inch::PIN_D14;
+    panel_config.data_gpio_nums[15]              = hal::Elecrow5Inch::PIN_D15;
+    panel_config.flags.fb_in_psram               = 1;    // both FBs in PSRAM
+
+    esp_err_t ret = esp_lcd_new_rgb_panel(&panel_config, &panel_handle_);
+    if (ret != ESP_OK) {
+        Serial.printf("[LVGL] esp_lcd_new_rgb_panel: %s\n", esp_err_to_name(ret));
+        return false;
+    }
+
+    esp_lcd_rgb_panel_event_callbacks_t cbs = {};
+    cbs.on_vsync = on_vsync_event;
+    esp_lcd_rgb_panel_register_event_callbacks(panel_handle_, &cbs, nullptr);
+
+    esp_lcd_panel_reset(panel_handle_);
+    esp_lcd_panel_init(panel_handle_);
+
+    // Get both framebuffer pointers (allocated by IDF in PSRAM)
+    esp_lcd_rgb_panel_get_frame_buffer(panel_handle_, 2, &fb1_, &fb2_);
+    memset(fb1_, 0, (size_t)hal::Elecrow5Inch::PANEL_WIDTH *
+                    hal::Elecrow5Inch::PANEL_HEIGHT * sizeof(uint16_t));
+    memset(fb2_, 0, (size_t)hal::Elecrow5Inch::PANEL_WIDTH *
+                    hal::Elecrow5Inch::PANEL_HEIGHT * sizeof(uint16_t));
+
+    // Backlight + touch via LGFX (no display bus — Panel_Device init-only)
+    lcd = new LGFX_Panel();
+    if (!lcd) {
+        Serial.println("[LVGL] Failed to allocate LGFX touch wrapper");
+        return false;
+    }
+    // Panel_NULL::init() is a no-op (returns false immediately, never touches LEDC/touch).
+    // Initialize backlight and touch directly via their sub-instances.
+    lcd->_light_instance.init(currentBrightness);
+    lcd->_touch_instance.init();
 
     lv_init();
 
@@ -195,52 +232,53 @@ bool LVGLDisplayManager::initHardware() {
         args.dispatch_method = ESP_TIMER_TASK;
         esp_err_t err = esp_timer_create(&args, &lvgl_tick_timer_);
         if (err != ESP_OK) {
-            Serial.printf("[LVGL] Failed to create tick timer: %s\n", esp_err_to_name(err));
+            Serial.printf("[LVGL] tick timer create: %s\n", esp_err_to_name(err));
             return false;
         }
         err = esp_timer_start_periodic(lvgl_tick_timer_, 1000 /* µs = 1 ms */);
         if (err != ESP_OK) {
-            Serial.printf("[LVGL] Failed to start tick timer: %s\n", esp_err_to_name(err));
+            Serial.printf("[LVGL] tick timer start: %s\n", esp_err_to_name(err));
             esp_timer_delete(lvgl_tick_timer_);
             lvgl_tick_timer_ = nullptr;
             return false;
         }
     }
 
-    // Small SRAM draw buffer — PARTIAL mode so LVGL only rewrites dirty regions.
-    // Panel_RGB has a single PSRAM framebuffer with no double-buffer API in
-    // ESP-IDF 4.4.7; waitDisplay() is a no-op. Keeping writes small and
-    // infrequent (this is a ~1 Hz dashboard) minimises the DMA-write race window.
-    static constexpr int kBufLines = 10;
-    static constexpr size_t kBufPx =
-        hal::Elecrow5Inch::PANEL_WIDTH * kBufLines;
-    static lv_color_t* buf1 = (lv_color_t*)heap_caps_malloc(
-        kBufPx * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if (!buf1) {
-        Serial.println("[LVGL] Failed to allocate draw buffer");
-        return false;
-    }
+    // FULL mode: LVGL renders the complete 800×480 frame into one IDF framebuffer,
+    // then flush_cb calls draw_bitmap (zero-copy vsync swap) to show it.
+    // This eliminates the stale back-buffer problem of DIRECT mode: in DIRECT mode
+    // only dirty regions are rendered into the draw buffer, leaving non-dirty areas
+    // with content from 2 frames ago. After the buffer swap, the stale non-dirty
+    // areas briefly show old content — visible as a "flicker" or "jump" on every
+    // update. FULL mode renders every pixel fresh each frame, so both buffers are
+    // always consistent. Overhead is negligible for a 10-second update interval.
+    static constexpr size_t kFbBytes =
+        (size_t)hal::Elecrow5Inch::PANEL_WIDTH *
+        hal::Elecrow5Inch::PANEL_HEIGHT * sizeof(lv_color_t);
 
-    lv_display = lv_display_create(hal::Elecrow5Inch::PANEL_WIDTH, hal::Elecrow5Inch::PANEL_HEIGHT);
+    lv_display = lv_display_create(hal::Elecrow5Inch::PANEL_WIDTH,
+                                   hal::Elecrow5Inch::PANEL_HEIGHT);
     lv_display_set_flush_cb(lv_display, flush_cb);
-    lv_display_set_buffers(lv_display, buf1, nullptr,
-        kBufPx * sizeof(lv_color_t), LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(lv_display, fb1_, fb2_,
+                           kFbBytes, LV_DISPLAY_RENDER_MODE_FULL);
 
     lv_indev = lv_indev_create();
     lv_indev_set_type(lv_indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(lv_indev, touchpad_read);
     lv_indev_set_disp(lv_indev, lv_display);
 
-    // Create the LVGL handler task now — internal SRAM is still plentiful here
-    // (WiFi hasn't run yet).  Stack and TCB both require internal SRAM on this port.
-    static constexpr uint32_t kLvglStackBytes = 16384;
+    // 24KB stack: lv_timer_handler() drives flexbox, multi-size fonts, 33-pt polylines,
+    // and up to 15 blips × 3 objects + 15 rows × 5 labels. 16KB is borderline and can
+    // silently overflow during complex redraws (corrupts adjacent heap, not a clean crash).
+    static constexpr uint32_t kLvglStackBytes = 24576;
     BaseType_t rc = xTaskCreatePinnedToCore(
         lvgl_task, "lvgl", kLvglStackBytes, nullptr, 2, &lvgl_task_handle_, 1);
     if (rc != pdPASS) {
         Serial.println("[LVGL] Failed to create LVGL task");
         return false;
     }
-    Serial.println("[LVGL] Hardware + task ready");
+
+    Serial.println("[LVGL] Hardware + double-buffer ready");
     return true;
 }
 
@@ -262,15 +300,94 @@ bool LVGLDisplayManager::initialize() {
     return initHardware() && buildScreens();
 }
 
+// Called by the LVGL task once per dirty region (inside lv_timer_handler).
+// For RGB panels with num_fbs=2, draw_bitmap() just schedules which PSRAM framebuffer
+// the GDMA will scan from at the next vsync — it returns immediately (no bus transfer).
+// Calling lv_display_flush_ready() immediately is correct: LVGL will not start rendering
+// the next frame until lv_timer_handler() is called again, which is gated behind the
+// vsync semaphore in lvgl_task. By the time that gate opens, the hardware has already
+// swapped to the new front buffer, so the old front buffer is safe to render into.
+// flush_cb is called by lv_timer_handler() for each dirty region.
+//
+// For the LAST region of each frame we call draw_bitmap() to schedule the buffer swap
+// at the next vsync, then set flush_pending_ WITHOUT calling lv_display_flush_ready().
+// lvgl_task calls flush_ready() AFTER the vsync semaphore fires (i.e. after the hardware
+// has actually swapped buffers). This keeps LVGL's front/back buffer tracking in phase
+// with the hardware — calling flush_ready() immediately (before vsync) causes LVGL to
+// write dirty regions into the wrong buffer, producing the flickering/stale-buffer bug
+// visible as blips and cardinal labels alternating between correct and missing states.
+//
+// For non-last regions, flush_ready() is called immediately (no buffer swap involved).
 void LVGLDisplayManager::flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
-    if (!s_instance || !s_instance->lcd) return;
-    uint32_t w = area->x2 - area->x1 + 1;
-    uint32_t h = area->y2 - area->y1 + 1;
-    s_instance->lcd->startWrite();
-    s_instance->lcd->setAddrWindow(area->x1, area->y1, w, h);
-    s_instance->lcd->writePixels((lgfx::rgb565_t*)px_map, w * h);
-    s_instance->lcd->endWrite();
-    lv_display_flush_ready(disp);
+    if (!s_instance || !s_instance->panel_handle_) {
+        lv_display_flush_ready(disp);
+        return;
+    }
+    if (lv_display_flush_is_last(disp)) {
+        if (s_instance->freeze_rendering_) {
+            // draw_bitmap MUST NOT be called during freeze — this means the flag
+            // failed to stop lv_timer_handler. Log and count for diagnosis.
+            s_instance->freeze_draw_leaked_++;
+            Serial.printf("[FREEZE] !! draw_bitmap DURING FREEZE t=%lu leaked=%lu\n",
+                          millis(), (unsigned long)s_instance->freeze_draw_leaked_);
+        }
+        int32_t w = lv_display_get_horizontal_resolution(disp);
+        int32_t h = lv_display_get_vertical_resolution(disp);
+        esp_lcd_panel_draw_bitmap(s_instance->panel_handle_, 0, 0, w, h, px_map);
+        s_instance->flush_pending_ = true;
+        uint32_t now_bm = millis();
+        if (s_instance->log_next_bitmap_) {
+            Serial.printf("[DRAW] first post-freeze bitmap at t=%lu ms\n", now_bm);
+            s_instance->log_next_bitmap_ = false;
+        }
+        s_instance->last_bitmap_ms_ = now_bm;
+    } else {
+        lv_display_flush_ready(disp);
+    }
+}
+
+bool IRAM_ATTR LVGLDisplayManager::on_vsync_event(esp_lcd_panel_handle_t /*panel*/,
+                                        const esp_lcd_rgb_panel_event_data_t* /*edata*/,
+                                        void* /*user_ctx*/) {
+    // Wake lvgl_task so it calls lv_timer_handler() on every vsync.
+    // lv_display_flush_ready() is called immediately in flush_cb (not here),
+    // which is the correct pattern for RGB panels — the vsync gate in lvgl_task
+    // ensures LVGL never renders into the current front buffer.
+    BaseType_t awoken = pdFALSE;
+    if (s_instance && s_instance->sem_vsync_end_)
+        xSemaphoreGiveFromISR(s_instance->sem_vsync_end_, &awoken);
+    return awoken == pdTRUE;
+}
+
+// Freeze rendering across a blocking network call.
+//
+// Two-layer guard:
+//   1. freeze_rendering_ flag — lvgl_task checks this BEFORE calling lv_timer_handler().
+//      Skipping lv_timer_handler() means no new draws or buffer swaps happen regardless
+//      of lv_lock state. Both tasks are pinned to Core 1, so volatile bool is sufficient.
+//   2. lv_lock() — waits for any render that was ALREADY in progress (lv_timer_handler
+//      holds lv_lock internally) to complete before returning. Without this, we could
+//      start the HTTP fetch while LVGL is mid-frame.
+//
+// On unfreeze: lv_unlock() releases the wait-for-in-progress-render guard first, then
+// freeze_rendering_ is cleared so lvgl_task resumes rendering.
+void LVGLDisplayManager::freezeRendering() {
+    freeze_draw_leaked_ = 0;
+    freeze_rendering_   = true;
+    freeze_start_ms_    = millis();
+    lv_lock();
+    Serial.printf("[FREEZE] START  t=%lu ms  last_bitmap=%lu ms ago  vsync_timeouts=%lu\n",
+                  freeze_start_ms_,
+                  last_bitmap_ms_ ? freeze_start_ms_ - last_bitmap_ms_ : 0,
+                  (unsigned long)vsync_timeouts_);
+}
+void LVGLDisplayManager::unfreezeRendering() {
+    uint32_t held_ms = millis() - freeze_start_ms_;
+    lv_unlock();
+    freeze_rendering_ = false;
+    log_next_bitmap_  = true;
+    Serial.printf("[FREEZE] END    t=%lu ms  held=%lu ms  leaked_draw_bitmaps=%lu\n",
+                  millis(), held_ms, (unsigned long)freeze_draw_leaked_);
 }
 
 // Touch callback
@@ -289,12 +406,41 @@ void LVGLDisplayManager::touchpad_read(lv_indev_t* indev, lv_indev_data_t* data)
     }
 }
 
-// LVGL handler task — runs independently of main loop on core 0
+// LVGL handler task — paced by VSYNC.
+//
+// lv_timer_handler() acquires lv_lock() INTERNALLY (lv_timer.c:81).
+// We must NOT hold lv_lock() before calling it.
+//
+// flush_cb calls lv_display_flush_ready() immediately (after draw_bitmap for last area).
+// lv_timer_handler() won't render the next frame within the same call — it returns after
+// flushing. The vsync gate here ensures the hardware has swapped buffers before we
+// render the next frame, so we never write into the currently-displayed buffer.
 void LVGLDisplayManager::lvgl_task(void* /*arg*/) {
     while (true) {
-        lv_lock();
-        lv_timer_handler();
-        lv_unlock();
+        BaseType_t got_vsync = xSemaphoreTake(s_instance->sem_vsync_end_, pdMS_TO_TICKS(60));  // 60ms > 43ms frame @ 10MHz pclk
+
+        if (got_vsync == pdFALSE) {
+            // 40 ms elapsed without a vsync ISR firing — hardware may have stalled.
+            uint32_t n = ++s_instance->vsync_timeouts_;
+            if (n == 1 || n % 20 == 0) {
+                Serial.printf("[LVGL] vsync TIMEOUT #%lu at t=%lu ms  flush_pending=%d  freeze=%d\n",
+                              (unsigned long)n, millis(),
+                              (int)s_instance->flush_pending_,
+                              (int)s_instance->freeze_rendering_);
+            }
+        } else {
+            s_instance->vsync_timeouts_ = 0;  // reset streak on successful vsync
+        }
+
+        if (s_instance->flush_pending_) {
+            s_instance->flush_pending_ = false;
+            lv_display_flush_ready(s_instance->lv_display);
+        }
+
+        if (!s_instance->freeze_rendering_) {
+            lv_timer_handler();
+        }
+
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
@@ -506,49 +652,55 @@ void LVGLDisplayManager::buildWeatherPanel(lv_obj_t* parent, WeatherWidgets& w) 
 void LVGLDisplayManager::updateWeatherWidgets(WeatherWidgets& w,
                                                const WeatherData& weather,
                                                int aircraftCount) {
-    // All widgets are built together; if label_temperature exists, the others do too.
     if (!w.label_temperature) return;
+
+    // Only call lv_label_set_text when content actually changed — avoids dirtying
+    // the widget (and triggering a PARTIAL flush) when data hasn't changed.
+    auto setLbl = [](lv_obj_t* lbl, const char* text) {
+        if (lbl && strcmp(lv_label_get_text(lbl), text) != 0)
+            lv_label_set_text(lbl, text);
+    };
 
     char buf[64];
 
     snprintf(buf, sizeof(buf), "%.0f\xc2\xb0""F", weather.temperature);
-    lv_label_set_text(w.label_temperature, buf);
+    setLbl(w.label_temperature, buf);
 
-    lv_label_set_text(w.label_weather_desc, weather.description.c_str());
+    setLbl(w.label_weather_desc, weather.description.c_str());
 
     snprintf(buf, sizeof(buf), "Feels: %.0f\xc2\xb0""F", weather.feelsLike);
-    lv_label_set_text(w.label_feels_like, buf);
+    setLbl(w.label_feels_like, buf);
 
     snprintf(buf, sizeof(buf), "H: %.0f\xc2\xb0  L: %.0f\xc2\xb0", weather.tempMax, weather.tempMin);
-    lv_label_set_text(w.label_temp_range, buf);
+    setLbl(w.label_temp_range, buf);
 
     snprintf(buf, sizeof(buf), "%.0f mph", weather.windSpeed);
-    lv_label_set_text(w.label_wind, buf);
+    setLbl(w.label_wind, buf);
 
     snprintf(buf, sizeof(buf), "%.0f%%", weather.humidity);
-    lv_label_set_text(w.label_humidity_val, buf);
+    setLbl(w.label_humidity_val, buf);
 
     snprintf(buf, sizeof(buf), LV_SYMBOL_UP " %s", formatTime(weather.sunrise).c_str());
-    lv_label_set_text(w.label_sunrise, buf);
+    setLbl(w.label_sunrise, buf);
 
     snprintf(buf, sizeof(buf), LV_SYMBOL_DOWN " %s", formatTime(weather.sunset).c_str());
-    lv_label_set_text(w.label_sunset, buf);
+    setLbl(w.label_sunset, buf);
 
     for (int i = 0; i < 5; i++) {
         if (!w.forecast[i].container) continue;
         if (i < (int)weather.forecast.size()) {
             const auto& day = weather.forecast[i];
-            lv_label_set_text(w.forecast[i].label_day,  day.dayName.c_str());
-            lv_label_set_text(w.forecast[i].label_cond, day.condition.c_str());
+            setLbl(w.forecast[i].label_day,  day.dayName.c_str());
+            setLbl(w.forecast[i].label_cond, day.condition.c_str());
             snprintf(buf, sizeof(buf), "%.0f\xc2\xb0", day.tempMax);
-            lv_label_set_text(w.forecast[i].label_hi, buf);
+            setLbl(w.forecast[i].label_hi, buf);
             snprintf(buf, sizeof(buf), "%.0f\xc2\xb0", day.tempMin);
-            lv_label_set_text(w.forecast[i].label_lo, buf);
+            setLbl(w.forecast[i].label_lo, buf);
         } else {
-            lv_label_set_text(w.forecast[i].label_day,  "-");
-            lv_label_set_text(w.forecast[i].label_cond, "");
-            lv_label_set_text(w.forecast[i].label_hi,   "--\xc2\xb0");
-            lv_label_set_text(w.forecast[i].label_lo,   "--\xc2\xb0");
+            setLbl(w.forecast[i].label_day,  "-");
+            setLbl(w.forecast[i].label_cond, "");
+            setLbl(w.forecast[i].label_hi,   "--\xc2\xb0");
+            setLbl(w.forecast[i].label_lo,   "--\xc2\xb0");
         }
     }
 
@@ -556,7 +708,7 @@ void LVGLDisplayManager::updateWeatherWidgets(WeatherWidgets& w,
     if (w.label_status_left) {
         if (!wifiConnected_) {
             lv_obj_set_style_text_color(w.label_status_left, COLOR_DESCENT, 0);
-            lv_label_set_text(w.label_status_left, "NO WIFI SIGNAL");
+            setLbl(w.label_status_left, "NO WIFI SIGNAL");
         } else if (aircraftCount > 0) {
             char ts[16];
             struct tm ti;
@@ -564,22 +716,22 @@ void LVGLDisplayManager::updateWeatherWidgets(WeatherWidgets& w,
             strftime(ts, sizeof(ts), "%H:%M", &ti);
             snprintf(buf, sizeof(buf), "OPENSKY OK / %s", ts);
             lv_obj_set_style_text_color(w.label_status_left, COLOR_TEXT_DIM, 0);
-            lv_label_set_text(w.label_status_left, buf);
+            setLbl(w.label_status_left, buf);
         } else {
             lv_obj_set_style_text_color(w.label_status_left, COLOR_TEXT_DIM, 0);
-            lv_label_set_text(w.label_status_left, "NO AIRCRAFT DETECTED");
+            setLbl(w.label_status_left, "NO AIRCRAFT DETECTED");
         }
     }
     if (w.label_status_live) {
         if (!wifiConnected_) {
             lv_obj_set_style_text_color(w.label_status_live, COLOR_DESCENT, 0);
-            lv_label_set_text(w.label_status_live, "OFFLINE");
+            setLbl(w.label_status_live, "OFFLINE");
         } else if (aircraftCount > 0) {
             lv_obj_set_style_text_color(w.label_status_live, COLOR_SUCCESS, 0);
-            lv_label_set_text(w.label_status_live, "LIVE");
+            setLbl(w.label_status_live, "LIVE");
         } else {
             lv_obj_set_style_text_color(w.label_status_live, COLOR_TEXT_DIM, 0);
-            lv_label_set_text(w.label_status_live, "IDLE");
+            setLbl(w.label_status_live, "IDLE");
         }
     }
 }
@@ -1038,11 +1190,13 @@ void LVGLDisplayManager::update_clock(WeatherWidgets& w) {
 
     char time_buf[16];
     strftime(time_buf, sizeof(time_buf), "%I:%M %p", &timeinfo);
-    if (w.label_time) lv_label_set_text(w.label_time, time_buf);
+    if (w.label_time && strcmp(lv_label_get_text(w.label_time), time_buf) != 0)
+        lv_label_set_text(w.label_time, time_buf);
 
     char date_buf[32];
     strftime(date_buf, sizeof(date_buf), "%a, %b %d", &timeinfo);
-    if (w.label_date) lv_label_set_text(w.label_date, date_buf);
+    if (w.label_date && strcmp(lv_label_get_text(w.label_date), date_buf) != 0)
+        lv_label_set_text(w.label_date, date_buf);
 
     if (statusClearTime > 0 && millis() >= statusClearTime) {
         statusClearTime = 0;
@@ -1051,9 +1205,17 @@ void LVGLDisplayManager::update_clock(WeatherWidgets& w) {
     }
 }
 
+static void blip_anim_x(void* obj, int32_t v) { lv_obj_set_x((lv_obj_t*)obj, v); }
+static void blip_anim_y(void* obj, int32_t v) { lv_obj_set_y((lv_obj_t*)obj, v); }
+
 void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
                                                int aircraftCount) {
     if (!label_radar_count_) return;
+
+    auto setLbl = [](lv_obj_t* lbl, const char* text) {
+        if (lbl && strcmp(lv_label_get_text(lbl), text) != 0)
+            lv_label_set_text(lbl, text);
+    };
 
     // Update top bar clock
     {
@@ -1061,35 +1223,35 @@ void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
         if (getLocalTime(&ti)) {
             char tb[12];
             strftime(tb, sizeof(tb), "%H:%M", &ti);
-            lv_label_set_text(label_radar_time_, tb);
+            setLbl(label_radar_time_, tb);
             char db[20];
             strftime(db, sizeof(db), "%a %d %b %Y", &ti);
-            lv_label_set_text(label_radar_date_, db);
+            setLbl(label_radar_date_, db);
         }
         char cb[32];
         snprintf(cb, sizeof(cb), LV_SYMBOL_BULLET " %d AIRCRAFT NEARBY", aircraftCount);
-        lv_label_set_text(label_radar_count_, cb);
+        setLbl(label_radar_count_, cb);
     }
 
     // Update list header
     {
         char hb[40];
         snprintf(hb, sizeof(hb), "AIRCRAFT IN RANGE  |  %d", aircraftCount);
-        lv_label_set_text(label_list_header_, hb);
+        setLbl(label_list_header_, hb);
     }
 
     // Status bar — reflects WiFi / data state
     if (label_radar_status_left_ && label_radar_status_live_) {
         if (!wifiConnected_) {
             lv_obj_set_style_text_color(label_radar_status_left_, COLOR_DESCENT, 0);
-            lv_label_set_text(label_radar_status_left_, "NO SIGNAL");
+            setLbl(label_radar_status_left_, "NO SIGNAL");
             lv_obj_set_style_text_color(label_radar_status_live_, COLOR_TEXT_DIM, 0);
-            lv_label_set_text(label_radar_status_live_, LV_SYMBOL_BULLET " OFFLINE");
+            setLbl(label_radar_status_live_, LV_SYMBOL_BULLET " OFFLINE");
         } else {
             lv_obj_set_style_text_color(label_radar_status_left_, COLOR_TEXT_DIM, 0);
-            lv_label_set_text(label_radar_status_left_, "OPENSKY OK");
+            setLbl(label_radar_status_left_, "OPENSKY OK");
             lv_obj_set_style_text_color(label_radar_status_live_, COLOR_SUCCESS, 0);
-            lv_label_set_text(label_radar_status_live_, LV_SYMBOL_BULLET " LIVE");
+            setLbl(label_radar_status_live_, LV_SYMBOL_BULLET " LIVE");
         }
     }
 
@@ -1115,65 +1277,144 @@ void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
             lv_color_t blipColor = (altFt > 0.0f && altFt < 5000.0f)
                                    ? COLOR_AMBER : COLOR_ACCENT;
 
-            // --- Radar blip ---
-            lv_obj_set_pos(blip.dot, pos.x - 6, pos.y - 6);
-            lv_obj_set_style_bg_color(blip.dot, blipColor, 0);
-            lv_obj_set_style_line_color(blip.vector, blipColor, 0);
-            lv_obj_set_style_text_color(blip.label, blipColor, 0);
-            lv_obj_remove_flag(blip.dot, LV_OBJ_FLAG_HIDDEN);
+            // --- Radar blip position (animated) ---
+            bool firstPlacement = !blip.placed;
+            bool dotMoved       = false;
+            {
+                int32_t nx = pos.x - 6, ny = pos.y - 6;
+                if (firstPlacement) {
+                    // First appearance — snap directly; no animation from undefined position.
+                    lv_obj_set_pos(blip.dot, nx, ny);
+                    blip.targetDotX = nx;
+                    blip.targetDotY = ny;
+                    blip.placed = true;
+                } else if (blip.targetDotX != nx || blip.targetDotY != ny) {
+                    // Aircraft moved — animate from current (possibly mid-animation) position.
+                    dotMoved = true;
+                    int32_t fromX = lv_obj_get_x(blip.dot);
+                    int32_t fromY = lv_obj_get_y(blip.dot);
+                    blip.targetDotX = nx;
+                    blip.targetDotY = ny;
+                    lv_anim_del(blip.dot, blip_anim_x);
+                    lv_anim_del(blip.dot, blip_anim_y);
+                    lv_anim_t da;
+                    lv_anim_init(&da);
+                    lv_anim_set_var(&da, blip.dot);
+                    lv_anim_set_duration(&da, 2000);
+                    lv_anim_set_path_cb(&da, lv_anim_path_ease_in_out);
+                    lv_anim_set_exec_cb(&da, blip_anim_x);
+                    lv_anim_set_values(&da, fromX, nx);
+                    lv_anim_start(&da);
+                    lv_anim_set_exec_cb(&da, blip_anim_y);
+                    lv_anim_set_values(&da, fromY, ny);
+                    lv_anim_start(&da);
+                }
+            }
+            // lv_obj_set_style_* always marks dirty even when the value is identical —
+            // guard all color calls so redraws only happen when altitude band changes.
+            if (!lv_color_eq(blip.lastColor, blipColor)) {
+                lv_obj_set_style_bg_color(blip.dot, blipColor, 0);
+                lv_obj_set_style_line_color(blip.vector, blipColor, 0);
+                lv_obj_set_style_text_color(blip.label, blipColor, 0);
+                blip.lastColor = blipColor;
+            }
+            lv_obj_remove_flag(blip.dot, LV_OBJ_FLAG_HIDDEN);  // idempotent in LVGL
 
-            // Heading vector (20px)
+            // Heading vector (20px) — guard lv_line_set_points the same way:
+            // aircraft positions update every 30s but display ticks every 10s.
             float rad = a.heading * GeoUtils::DEG_TO_RAD;
-            blip.vec_pts[0] = {(lv_value_precise_t)pos.x, (lv_value_precise_t)pos.y};
-            blip.vec_pts[1] = {
-                (lv_value_precise_t)(pos.x + 20.0f * sinf(rad)),
-                (lv_value_precise_t)(pos.y - 20.0f * cosf(rad))
-            };
-            lv_line_set_points(blip.vector, blip.vec_pts, 2);
+            {
+                lv_value_precise_t np0x = (lv_value_precise_t)pos.x;
+                lv_value_precise_t np0y = (lv_value_precise_t)pos.y;
+                lv_value_precise_t np1x = (lv_value_precise_t)(pos.x + 20.0f * sinf(rad));
+                lv_value_precise_t np1y = (lv_value_precise_t)(pos.y - 20.0f * cosf(rad));
+                if (blip.vec_pts[0].x != np0x || blip.vec_pts[0].y != np0y ||
+                    blip.vec_pts[1].x != np1x || blip.vec_pts[1].y != np1y) {
+                    blip.vec_pts[0] = {np0x, np0y};
+                    blip.vec_pts[1] = {np1x, np1y};
+                    lv_line_set_points(blip.vector, blip.vec_pts, 2);
+                }
+            }
             lv_obj_remove_flag(blip.vector, LV_OBJ_FLAG_HIDDEN);
 
-            // Callsign label
-            lv_label_set_text(blip.label, a.callsign.c_str());
-            lv_obj_set_pos(blip.label, pos.x + 10, pos.y - 8);
+            // Callsign label — animates in sync with the dot
+            setLbl(blip.label, a.callsign.c_str());
+            {
+                int32_t lx = pos.x + 10, ly = pos.y - 8;
+                if (firstPlacement) {
+                    lv_obj_set_pos(blip.label, lx, ly);
+                } else if (dotMoved) {
+                    int32_t fromLX = lv_obj_get_x(blip.label);
+                    int32_t fromLY = lv_obj_get_y(blip.label);
+                    lv_anim_del(blip.label, blip_anim_x);
+                    lv_anim_del(blip.label, blip_anim_y);
+                    lv_anim_t la;
+                    lv_anim_init(&la);
+                    lv_anim_set_var(&la, blip.label);
+                    lv_anim_set_duration(&la, 2000);
+                    lv_anim_set_path_cb(&la, lv_anim_path_ease_in_out);
+                    lv_anim_set_exec_cb(&la, blip_anim_x);
+                    lv_anim_set_values(&la, fromLX, lx);
+                    lv_anim_start(&la);
+                    lv_anim_set_exec_cb(&la, blip_anim_y);
+                    lv_anim_set_values(&la, fromLY, ly);
+                    lv_anim_start(&la);
+                }
+            }
             lv_obj_remove_flag(blip.label, LV_OBJ_FLAG_HIDDEN);
 
             // --- List row ---
             lv_obj_remove_flag(row.container, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_style_bg_color(row.accent_bar, blipColor, 0);
-            lv_obj_set_style_text_color(row.label_callsign, blipColor, 0);
-
-            // Airline name (primary) — fall back to callsign if lookup not yet done
-            lv_label_set_text(row.label_callsign,
-                a.airline.isEmpty() ? a.callsign.c_str() : a.airline.c_str());
-
-            // Route line: "CITY, CC → CITY, CC · CALLSIGN"
-            char tr[96];
-            const String& org = a.originDisplay.isEmpty()      ? a.origin      : a.originDisplay;
-            const String& dst = a.destinationDisplay.isEmpty() ? a.destination : a.destinationDisplay;
-            if (!org.isEmpty() && !dst.isEmpty()) {
-                snprintf(tr, sizeof(tr), "%s > %s  /  %s",
-                         org.c_str(), dst.c_str(), a.callsign.c_str());
-            } else {
-                snprintf(tr, sizeof(tr), "%s", a.callsign.c_str());
+            if (!lv_color_eq(row.lastColor, blipColor)) {
+                lv_obj_set_style_bg_color(row.accent_bar, blipColor, 0);
+                lv_obj_set_style_text_color(row.label_callsign, blipColor, 0);
+                row.lastColor = blipColor;
             }
-            lv_label_set_text(row.label_type_route, tr);
+
+            // Row 1: "Airline  CALLSIGN" or just callsign if airline unknown
+            {
+                char ln1[48];
+                if (a.airline.isEmpty()) {
+                    snprintf(ln1, sizeof(ln1), "%s", a.callsign.c_str());
+                } else {
+                    snprintf(ln1, sizeof(ln1), "%s  %s", a.airline.c_str(), a.callsign.c_str());
+                }
+                setLbl(row.label_callsign, ln1);
+            }
+
+            // Row 2: "CITY > CITY"
+            {
+                char tr[64];
+                const String& org = a.originDisplay.isEmpty()      ? a.origin      : a.originDisplay;
+                const String& dst = a.destinationDisplay.isEmpty() ? a.destination : a.destinationDisplay;
+                if (!org.isEmpty() && !dst.isEmpty()) {
+                    snprintf(tr, sizeof(tr), "%s > %s", org.c_str(), dst.c_str());
+                } else {
+                    tr[0] = '\0';
+                }
+                setLbl(row.label_type_route, tr);
+            }
 
             // Aircraft type
-            lv_label_set_text(row.label_type,
-                a.aircraftType.isEmpty() ? "" : a.aircraftType.c_str());
+            setLbl(row.label_type, a.aircraftType.isEmpty() ? "" : a.aircraftType.c_str());
 
             // Stats line
             float speedKt = a.velocity * 1.94384f;
             char sm[80];
             snprintf(sm, sizeof(sm), "%.0f ft / %.0f kt / %s / %.1f nm",
                      altFt, speedKt, GeoUtils::cardinalDir(bearing), distNm);
-            lv_label_set_text(row.label_summary, sm);
+            setLbl(row.label_summary, sm);
 
         } else {
-            // Hide blip and row
-            lv_obj_add_flag(blip.dot,    LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(blip.vector, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(blip.label,  LV_OBJ_FLAG_HIDDEN);
+            // Aircraft gone — cancel any in-flight animation and reset for next appearance.
+            lv_anim_del(blip.dot,   blip_anim_x);
+            lv_anim_del(blip.dot,   blip_anim_y);
+            lv_anim_del(blip.label, blip_anim_x);
+            lv_anim_del(blip.label, blip_anim_y);
+            blip.placed = false;
+            lv_obj_add_flag(blip.dot,      LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(blip.vector,   LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(blip.label,    LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(row.container, LV_OBJ_FLAG_HIDDEN);
         }
     }
