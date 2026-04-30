@@ -185,12 +185,18 @@ bool RouteCache::lookupType(const String& icao24, String& typeOut) {
         return true;
     }
 
+    if (Config::PERFORMANCE_CACHE_ONLY_ENRICHMENT) {
+        // Keep UI smooth in production mode by avoiding blocking network lookups.
+        typeCache_[icao24] = "";
+        return false;
+    }
+
     // 3. HTTP
     WiFiClientSecure client;
     client.setInsecure();
     HTTPClient http;
     http.begin(client, String("https://hexdb.io/api/v1/aircraft/") + icao24);
-    http.setTimeout(8000);
+    http.setTimeout(Config::DEBUG_LOOKUP_HTTP_TIMEOUT_MS);
 
     int code = http.GET();
     if (code != 200) {
@@ -254,6 +260,12 @@ bool RouteCache::lookup(const String& callsign,
         return cacheAndReturn("sd");
     }
 
+    if (Config::PERFORMANCE_CACHE_ONLY_ENRICHMENT) {
+        // Cache-only mode avoids long blocking HTTP fallback chains.
+        notFound_.insert(callsign);
+        return false;
+    }
+
     // 3. HTTP backends
     if (fetchFromHexdb(callsign, origin, destination, originCity, originCountry,
                         destinationCity, destinationCountry)) {
@@ -296,7 +308,7 @@ bool RouteCache::fetchFromHexdb(const String& callsign,
     client.setInsecure();
     HTTPClient http;
     http.begin(client, url);
-    http.setTimeout(8000);
+    http.setTimeout(Config::DEBUG_LOOKUP_HTTP_TIMEOUT_MS);
 
     int code = http.GET();
     if (code != 200) { http.end(); return false; }
@@ -340,7 +352,7 @@ bool RouteCache::fetchFromAdsbdb(const String& callsign,
     client.setInsecure();
     HTTPClient http;
     http.begin(client, url);
-    http.setTimeout(8000);
+    http.setTimeout(Config::DEBUG_LOOKUP_HTTP_TIMEOUT_MS);
 
     int code = http.GET();
     if (code != 200) { http.end(); return false; }
@@ -392,7 +404,7 @@ bool RouteCache::fetchFromApi(const String& iataFlightNumber,
     client.setInsecure();
     HTTPClient http;
     http.begin(client, url);
-    http.setTimeout(10000);
+    http.setTimeout(Config::DEBUG_LOOKUP_HTTP_TIMEOUT_MS);
     http.addHeader("x-rapidapi-key",  Config::AERODATABOX_API_KEY);
     http.addHeader("x-rapidapi-host", "aerodatabox.p.rapidapi.com");
 

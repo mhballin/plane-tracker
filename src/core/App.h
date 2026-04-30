@@ -56,6 +56,9 @@ private:
     RouteCache*   routeCache_;
     bool          aircraftDismissed_;
 
+    uint32_t      debugLastSummaryMs_;
+    uint32_t      debugMaxFreezeMs_;
+
     SerialCommandHandler serial_;
 };
 

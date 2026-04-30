@@ -23,6 +23,8 @@ App::App()
     , healthTaskId_(Scheduler::INVALID_TASK)
     , routeCache_(nullptr)
     , aircraftDismissed_(false)
+    , debugLastSummaryMs_(0)
+    , debugMaxFreezeMs_(0)
     , serial_(nullptr) {
 }
 
@@ -62,7 +64,19 @@ bool App::begin() {
     // WiFi runs after the LVGL task is created but before screens are built.
     // This gives WiFi access to internal SRAM DMA buffers (not yet consumed by
     // the widget tree), while the task stack is already safely allocated.
-    if (!wifiManager_.connect()) {
+    uint32_t wifiStartMs = millis();
+    if (display_) display_->freezeRendering();
+    bool wifiOk = wifiManager_.connect();
+    if (display_) {
+        uint32_t heldMs = millis() - wifiStartMs;
+        if (heldMs > debugMaxFreezeMs_) debugMaxFreezeMs_ = heldMs;
+        display_->unfreezeRendering();
+    }
+    if (Config::DEBUG_TIMING_LOGS) {
+        Serial.printf("[TIMING] WiFi connect in begin: %lu ms  ok=%d\n",
+                      millis() - wifiStartMs, wifiOk ? 1 : 0);
+    }
+    if (!wifiOk) {
         Serial.println("[WiFi] Initial connection failed; will retry in tick()");
     }
 
@@ -87,7 +101,19 @@ bool App::begin() {
         return false;
     }
 
-    if (!openSkyService_->initialize()) {
+    uint32_t authStartMs = millis();
+    if (display_) display_->freezeRendering();
+    bool authOk = openSkyService_->initialize();
+    if (display_) {
+        uint32_t heldMs = millis() - authStartMs;
+        if (heldMs > debugMaxFreezeMs_) debugMaxFreezeMs_ = heldMs;
+        display_->unfreezeRendering();
+    }
+    if (Config::DEBUG_TIMING_LOGS) {
+        Serial.printf("[TIMING] OpenSky init auth in begin: %lu ms  ok=%d\n",
+                      millis() - authStartMs, authOk ? 1 : 0);
+    }
+    if (!authOk) {
         Serial.println("[WARN] OpenSky auth failed; API may be rate-limited");
     }
 
@@ -115,6 +141,8 @@ bool App::begin() {
     // Tasks registered with runImmediately=true so the first App::tick() fires
     // all four update functions immediately, without blocking setup().
 
+    // Reset runtime freeze baseline after boot so summaries reflect steady-state behavior.
+    debugMaxFreezeMs_ = 0;
     Serial.println("[INIT] v4 rewrite foundation ready");
     return true;
 }
@@ -133,11 +161,39 @@ void App::tick() {
     serial_.tick();
     applyNightMode();
 
-    wifiManager_.tick(now);
+    if (wifiManager_.isConnected()) {
+        wifiManager_.tick(now);
+    } else {
+        uint32_t reconnectStartMs = millis();
+        if (display_) display_->freezeRendering();
+        wifiManager_.tick(now);
+        if (display_) {
+            uint32_t heldMs = millis() - reconnectStartMs;
+            if (heldMs > debugMaxFreezeMs_) debugMaxFreezeMs_ = heldMs;
+            display_->unfreezeRendering();
+        }
+        if (Config::DEBUG_TIMING_LOGS) {
+            Serial.printf("[TIMING] WiFi reconnect attempt window: %lu ms\n",
+                          millis() - reconnectStartMs);
+        }
+    }
     if (display_) display_->setWifiConnected(wifiManager_.isConnected());
     if (wifiManager_.justReconnected()) {
         if (display_) display_->setStatusMessage("WiFi reconnected");
-        if (openSkyService_) openSkyService_->initialize();
+        if (openSkyService_) {
+            uint32_t reauthStartMs = millis();
+            if (display_) display_->freezeRendering();
+            bool reauthOk = openSkyService_->initialize();
+            if (display_) {
+                uint32_t heldMs = millis() - reauthStartMs;
+                if (heldMs > debugMaxFreezeMs_) debugMaxFreezeMs_ = heldMs;
+                display_->unfreezeRendering();
+            }
+            if (Config::DEBUG_TIMING_LOGS) {
+                Serial.printf("[TIMING] OpenSky re-auth on reconnect: %lu ms  ok=%d\n",
+                              millis() - reauthStartMs, reauthOk ? 1 : 0);
+            }
+        }
     }
 
     if (display_) {
@@ -195,12 +251,25 @@ void App::tick() {
         webDashboard_->loop();
     }
 
+    if (Config::DEBUG_TIMING_LOGS && (now - debugLastSummaryMs_) >= Config::DEBUG_SUMMARY_INTERVAL_MS) {
+        debugLastSummaryMs_ = now;
+        Serial.printf("[SUMMARY] heap=%lu max_heap=%lu psram_free=%lu max_freeze=%lums aircraft=%d wifi=%d\n",
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)ESP.getMaxAllocHeap(),
+                      (unsigned long)ESP.getFreePsram(),
+                      (unsigned long)debugMaxFreezeMs_,
+                      currentAircraftCount_,
+                      wifiManager_.isConnected() ? 1 : 0);
+    }
+
     delay(Config::TICK_DELAY_MS);
 }
 
 void App::setupTasks() {
     weatherTaskId_ = scheduler_.addTask(Config::WEATHER_UPDATE_INTERVAL, true);
-    aircraftTaskId_ = scheduler_.addTask(Config::PLANE_UPDATE_INTERVAL, true);
+    // Offset aircraft fetch by 5s from display update cycle (display: 0,10,20,30...; aircraft: 5,35,65...)
+    // This makes data arrive *between* display ticks, reducing visible "blip" when freeze ends + render happens.
+    aircraftTaskId_ = scheduler_.addTask(Config::PLANE_UPDATE_INTERVAL, true, 5000);
     displayTaskId_ = scheduler_.addTask(Config::DISPLAY_UPDATE_INTERVAL, true);
     healthTaskId_ = scheduler_.addTask(Config::HEALTH_UPDATE_INTERVAL, true);
 }
@@ -210,9 +279,17 @@ void App::updateWeather() {
         return;
     }
 
+    uint32_t t0 = millis();
     if (display_) display_->freezeRendering();
     bool weatherOk = weatherService_->getWeather(currentWeather_);
-    if (display_) display_->unfreezeRendering();
+    if (display_) {
+        uint32_t heldMs = millis() - t0;
+        if (heldMs > debugMaxFreezeMs_) debugMaxFreezeMs_ = heldMs;
+        display_->unfreezeRendering();
+    }
+    if (Config::DEBUG_TIMING_LOGS) {
+        Serial.printf("[TIMING] Weather fetch: %lu ms  ok=%d\n", millis() - t0, weatherOk ? 1 : 0);
+    }
 
     if (weatherOk) {
         if (display_) {
@@ -257,10 +334,18 @@ void App::updateAircraft() {
     }
 
     Serial.printf("[App] aircraft fetch BEGIN t=%lu ms\n", millis());
+    uint32_t t0 = millis();
     if (display_) display_->freezeRendering();
     int newCount = openSkyService_->fetchAircraft(aircraftList_, Config::MAX_AIRCRAFT);
-    if (display_) display_->unfreezeRendering();
+    if (display_) {
+        uint32_t heldMs = millis() - t0;
+        if (heldMs > debugMaxFreezeMs_) debugMaxFreezeMs_ = heldMs;
+        display_->unfreezeRendering();
+    }
     Serial.printf("[App] aircraft fetch END   t=%lu ms  count=%d\n", millis(), newCount);
+    if (Config::DEBUG_TIMING_LOGS) {
+        Serial.printf("[TIMING] Aircraft fetch: %lu ms  count=%d\n", millis() - t0, newCount);
+    }
 
     currentAircraftCount_ = newCount < 0 ? 0 : newCount;
 
@@ -302,17 +387,48 @@ void App::updateDisplay() {
     }
 
     if (screen == LVGLDisplayManager::SCREEN_RADAR) {
+        if (Config::DEBUG_ISOLATE_ROUTE_TYPE_LOOKUPS) {
+            static bool loggedIsolation = false;
+            if (!loggedIsolation) {
+                Serial.println("[ISOLATION] Route/type lookups disabled for root-cause investigation");
+                loggedIsolation = true;
+            }
+            display_->update(currentWeather_, aircraftList_, currentAircraftCount_);
+            return;
+        }
+
+        if (!Config::ENABLE_ROUTE_TYPE_LOOKUPS) {
+            display_->update(currentWeather_, aircraftList_, currentAircraftCount_);
+            return;
+        }
+
         if (routeCache_ && wifiManager_.isConnected()) {
+            uint32_t budgetStartMs = millis();
             for (int i = 0; i < currentAircraftCount_; i++) {
+                if ((millis() - budgetStartMs) >= Config::DEBUG_LOOKUP_BUDGET_MS) {
+                    if (Config::DEBUG_TIMING_LOGS) {
+                        Serial.printf("[TIMING] Lookup budget hit after %lu ms; deferring remaining entries\n",
+                                      millis() - budgetStartMs);
+                    }
+                    break;
+                }
+
                 Aircraft& a = aircraftList_[i];
                 if (!a.valid || a.callsign.isEmpty()) continue;
 
                 if (!a.routeLookupDone) {
                     String org, dst, orgCity, orgCountry, dstCity, dstCountry;
+                    uint32_t t0 = millis();
                     display_->freezeRendering();
                     bool routeFound = routeCache_->lookup(a.callsign, org, dst, orgCity, orgCountry,
                                                          dstCity, dstCountry);
+                    uint32_t lookupMs = millis() - t0;
+                    if (lookupMs > debugMaxFreezeMs_) debugMaxFreezeMs_ = lookupMs;
                     display_->unfreezeRendering();
+                    if (Config::DEBUG_TIMING_LOGS) {
+                        Serial.printf("[TIMING] Route lookup callsign=%s ms=%lu found=%d\n",
+                                      a.callsign.c_str(), lookupMs, routeFound ? 1 : 0);
+                    }
                     if (routeFound) {
                         a.origin             = org;
                         a.destination        = dst;
@@ -327,9 +443,16 @@ void App::updateDisplay() {
 
                 if (!a.typeLookupDone && !a.icao24.isEmpty()) {
                     String typeStr;
+                    uint32_t t0 = millis();
                     display_->freezeRendering();
                     bool typeFound = routeCache_->lookupType(a.icao24, typeStr);
+                    uint32_t lookupMs = millis() - t0;
+                    if (lookupMs > debugMaxFreezeMs_) debugMaxFreezeMs_ = lookupMs;
                     display_->unfreezeRendering();
+                    if (Config::DEBUG_TIMING_LOGS) {
+                        Serial.printf("[TIMING] Type lookup icao24=%s ms=%lu found=%d\n",
+                                      a.icao24.c_str(), lookupMs, typeFound ? 1 : 0);
+                    }
                     if (typeFound) {
                         a.aircraftType = typeStr;
                     }

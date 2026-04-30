@@ -67,6 +67,44 @@ namespace Config {
     constexpr unsigned long HEALTH_UPDATE_INTERVAL = 2000;      // 2 seconds
 
     // ========================================
+    // Product Modes
+    // ========================================
+    // Performance mode targets a smoother production UX by reducing expensive
+    // work in render-critical windows.
+    constexpr bool PERFORMANCE_MODE = true;
+    constexpr bool ENABLE_ROUTE_TYPE_LOOKUPS = true;
+    // In performance mode, keep enrichment reads to session RAM/SD only and skip
+    // network fallback to avoid long freeze windows that create visible blips.
+    constexpr bool PERFORMANCE_CACHE_ONLY_ENRICHMENT = PERFORMANCE_MODE;
+    constexpr bool ENABLE_RADAR_ANIMATION = !PERFORMANCE_MODE;
+    constexpr uint16_t RADAR_ANIMATION_MS = PERFORMANCE_MODE ? 0 : 2000;
+    constexpr uint32_t LOOKUP_BUDGET_MS = PERFORMANCE_MODE ? 1200 : 2500;
+    constexpr uint16_t LOOKUP_HTTP_TIMEOUT_MS = PERFORMANCE_MODE ? 1800 : 2500;
+    constexpr bool ENABLE_TIMING_LOGS = !PERFORMANCE_MODE;
+    constexpr bool LIMIT_WIFI_TX_POWER = true;
+    constexpr int8_t WIFI_TX_POWER_QUARTER_DBM = 52;
+
+    // ========================================
+    // Debug / Investigation Controls
+    // ========================================
+    // Root-cause isolation toggle: when true, route/type enrichment HTTP calls are skipped
+    // so display artifacts can be tested against OpenSky/weather traffic only.
+    constexpr bool DEBUG_ISOLATE_ROUTE_TYPE_LOOKUPS = false;
+    // Emit timing diagnostics for blocking network and render loops.
+    constexpr bool DEBUG_TIMING_LOGS = ENABLE_TIMING_LOGS;
+    // Periodic summary cadence for heap/PSRAM and max observed freeze windows.
+    constexpr uint32_t DEBUG_SUMMARY_INTERVAL_MS = 10000;
+    // When route/type lookups are enabled, cap lookup work per display tick so
+    // one cycle cannot hold a long freeze window.
+    constexpr uint32_t DEBUG_LOOKUP_BUDGET_MS = LOOKUP_BUDGET_MS;
+    // Shared timeout for route/type backend HTTP calls while investigating stalls.
+    constexpr uint16_t DEBUG_LOOKUP_HTTP_TIMEOUT_MS = LOOKUP_HTTP_TIMEOUT_MS;
+    // Optional WiFi TX power cap (units are 0.25 dBm steps per esp_wifi_set_max_tx_power).
+    // 52 => 13.0 dBm, 78 => 19.5 dBm (typical default).
+    constexpr bool DEBUG_LIMIT_WIFI_TX_POWER = LIMIT_WIFI_TX_POWER;
+    constexpr int8_t DEBUG_WIFI_TX_POWER_QUARTER_DBM = WIFI_TX_POWER_QUARTER_DBM;
+
+    // ========================================
     // UI Behavior & Gestures
     // ========================================
     constexpr unsigned long UI_AUTO_HOME_MS = 60000;        // 60 seconds idle to return home

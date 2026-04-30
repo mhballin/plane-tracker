@@ -6,7 +6,7 @@ Scheduler::Scheduler() {
     reset();
 }
 
-int8_t Scheduler::addTask(uint32_t intervalMs, bool runImmediately) {
+int8_t Scheduler::addTask(uint32_t intervalMs, bool runImmediately, uint32_t initialDelayMs) {
     if (intervalMs == 0) {
         return INVALID_TASK;
     }
@@ -15,7 +15,12 @@ int8_t Scheduler::addTask(uint32_t intervalMs, bool runImmediately) {
         if (!tasks_[i].active) {
             tasks_[i].active = true;
             tasks_[i].intervalMs = intervalMs;
-            tasks_[i].lastRunMs = runImmediately ? (millis() - intervalMs) : millis();
+            // If runImmediately, the task is due right away (accounting for initialDelayMs offset).
+            // If not, the task waits one interval.
+            // initialDelayMs: how long to wait before first execution (e.g., 5000 = first due after 5 seconds).
+            tasks_[i].lastRunMs = runImmediately
+                ? (millis() - intervalMs + initialDelayMs)
+                : (millis() + initialDelayMs);
             return static_cast<int8_t>(i);
         }
     }

@@ -3,6 +3,7 @@
 #include "config/Config.h"
 #include <time.h>
 #include <esp_netif.h>
+#include <esp_wifi.h>
 
 namespace core {
 
@@ -46,6 +47,12 @@ bool WiFiManager::connect() {
     }
 
     WiFi.setSleep(false);
+
+    if (Config::DEBUG_LIMIT_WIFI_TX_POWER) {
+        esp_err_t pwrRc = esp_wifi_set_max_tx_power(Config::DEBUG_WIFI_TX_POWER_QUARTER_DBM);
+        Serial.printf("[WiFi] TX power cap set rc=%d qdbm=%d\n",
+                      (int)pwrRc, (int)Config::DEBUG_WIFI_TX_POWER_QUARTER_DBM);
+    }
 
     Serial.printf("[WiFi] Connected: %s  GW: %s  DNS: %s\n",
                   WiFi.localIP().toString().c_str(),

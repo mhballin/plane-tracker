@@ -324,7 +324,7 @@ void LVGLDisplayManager::flush_cb(lv_display_t* disp, const lv_area_t* area, uin
         return;
     }
     if (lv_display_flush_is_last(disp)) {
-        if (s_instance->freeze_rendering_) {
+        if (s_instance->freeze_rendering_ && s_instance->freeze_guard_active_) {
             // draw_bitmap MUST NOT be called during freeze — this means the flag
             // failed to stop lv_timer_handler. Log and count for diagnosis.
             s_instance->freeze_draw_leaked_++;
@@ -372,17 +372,25 @@ bool IRAM_ATTR LVGLDisplayManager::on_vsync_event(esp_lcd_panel_handle_t /*panel
 // On unfreeze: lv_unlock() releases the wait-for-in-progress-render guard first, then
 // freeze_rendering_ is cleared so lvgl_task resumes rendering.
 void LVGLDisplayManager::freezeRendering() {
-    freeze_draw_leaked_ = 0;
     freeze_rendering_   = true;
-    freeze_start_ms_    = millis();
     lv_lock();
+    freeze_start_ms_    = millis();
+    freeze_guard_active_ = true;
+    // Reset leak diagnostics only after lv_lock is acquired so in-flight pre-lock
+    // flushes are not counted as violations inside the protected freeze window.
+    freeze_draw_leaked_ = 0;
+    uint32_t sinceLastBitmap = 0;
+    if (last_bitmap_ms_ > 0 && freeze_start_ms_ >= last_bitmap_ms_) {
+        sinceLastBitmap = freeze_start_ms_ - last_bitmap_ms_;
+    }
     Serial.printf("[FREEZE] START  t=%lu ms  last_bitmap=%lu ms ago  vsync_timeouts=%lu\n",
                   freeze_start_ms_,
-                  last_bitmap_ms_ ? freeze_start_ms_ - last_bitmap_ms_ : 0,
+                  (unsigned long)sinceLastBitmap,
                   (unsigned long)vsync_timeouts_);
 }
 void LVGLDisplayManager::unfreezeRendering() {
     uint32_t held_ms = millis() - freeze_start_ms_;
+    freeze_guard_active_ = false;
     lv_unlock();
     freeze_rendering_ = false;
     log_next_bitmap_  = true;
@@ -438,7 +446,26 @@ void LVGLDisplayManager::lvgl_task(void* /*arg*/) {
         }
 
         if (!s_instance->freeze_rendering_) {
+            uint32_t h0 = millis();
             lv_timer_handler();
+            uint32_t hMs = millis() - h0;
+            s_instance->lv_timer_last_ms_ = hMs;
+            if (hMs > s_instance->lv_timer_max_ms_) {
+                s_instance->lv_timer_max_ms_ = hMs;
+            }
+        } else {
+            s_instance->lv_skip_cycles_++;
+        }
+
+        uint32_t now = millis();
+        if (Config::DEBUG_TIMING_LOGS && (now - s_instance->diag_last_ms_) >= Config::DEBUG_SUMMARY_INTERVAL_MS) {
+            s_instance->diag_last_ms_ = now;
+            Serial.printf("[LVGL] diag last_handler=%lums max_handler=%lums skips=%lu flush_pending=%d vsync_timeouts=%lu\n",
+                          (unsigned long)s_instance->lv_timer_last_ms_,
+                          (unsigned long)s_instance->lv_timer_max_ms_,
+                          (unsigned long)s_instance->lv_skip_cycles_,
+                          (int)s_instance->flush_pending_,
+                          (unsigned long)s_instance->vsync_timeouts_);
         }
 
         vTaskDelay(pdMS_TO_TICKS(5));
@@ -660,6 +687,12 @@ void LVGLDisplayManager::updateWeatherWidgets(WeatherWidgets& w,
         if (lbl && strcmp(lv_label_get_text(lbl), text) != 0)
             lv_label_set_text(lbl, text);
     };
+    auto setStatusColor = [](lv_obj_t* obj, lv_color_t next, lv_color_t& cached) {
+        if (obj && !lv_color_eq(cached, next)) {
+            lv_obj_set_style_text_color(obj, next, 0);
+            cached = next;
+        }
+    };
 
     char buf[64];
 
@@ -707,7 +740,7 @@ void LVGLDisplayManager::updateWeatherWidgets(WeatherWidgets& w,
     // Status bar
     if (w.label_status_left) {
         if (!wifiConnected_) {
-            lv_obj_set_style_text_color(w.label_status_left, COLOR_DESCENT, 0);
+            setStatusColor(w.label_status_left, COLOR_DESCENT, home_status_left_color_);
             setLbl(w.label_status_left, "NO WIFI SIGNAL");
         } else if (aircraftCount > 0) {
             char ts[16];
@@ -715,22 +748,22 @@ void LVGLDisplayManager::updateWeatherWidgets(WeatherWidgets& w,
             getLocalTime(&ti);
             strftime(ts, sizeof(ts), "%H:%M", &ti);
             snprintf(buf, sizeof(buf), "OPENSKY OK / %s", ts);
-            lv_obj_set_style_text_color(w.label_status_left, COLOR_TEXT_DIM, 0);
+            setStatusColor(w.label_status_left, COLOR_TEXT_DIM, home_status_left_color_);
             setLbl(w.label_status_left, buf);
         } else {
-            lv_obj_set_style_text_color(w.label_status_left, COLOR_TEXT_DIM, 0);
+            setStatusColor(w.label_status_left, COLOR_TEXT_DIM, home_status_left_color_);
             setLbl(w.label_status_left, "NO AIRCRAFT DETECTED");
         }
     }
     if (w.label_status_live) {
         if (!wifiConnected_) {
-            lv_obj_set_style_text_color(w.label_status_live, COLOR_DESCENT, 0);
+            setStatusColor(w.label_status_live, COLOR_DESCENT, home_status_live_color_);
             setLbl(w.label_status_live, "OFFLINE");
         } else if (aircraftCount > 0) {
-            lv_obj_set_style_text_color(w.label_status_live, COLOR_SUCCESS, 0);
+            setStatusColor(w.label_status_live, COLOR_SUCCESS, home_status_live_color_);
             setLbl(w.label_status_live, "LIVE");
         } else {
-            lv_obj_set_style_text_color(w.label_status_live, COLOR_TEXT_DIM, 0);
+            setStatusColor(w.label_status_live, COLOR_TEXT_DIM, home_status_live_color_);
             setLbl(w.label_status_live, "IDLE");
         }
     }
@@ -1172,13 +1205,23 @@ void LVGLDisplayManager::update_home_screen(const WeatherData& weather,
     if (aircraftCount > 0) {
         char buf[40];
         snprintf(buf, sizeof(buf), "%d AIRCRAFT NEARBY", aircraftCount);
-        lv_obj_set_style_text_color(label_airspace_status_, COLOR_AMBER, 0);
-        lv_label_set_text(label_airspace_status_, buf);
-        lv_label_set_text(label_airspace_sub_, "");
+        if (!lv_color_eq(home_airspace_color_, COLOR_AMBER)) {
+            lv_obj_set_style_text_color(label_airspace_status_, COLOR_AMBER, 0);
+            home_airspace_color_ = COLOR_AMBER;
+        }
+        if (strcmp(lv_label_get_text(label_airspace_status_), buf) != 0)
+            lv_label_set_text(label_airspace_status_, buf);
+        if (strcmp(lv_label_get_text(label_airspace_sub_), "") != 0)
+            lv_label_set_text(label_airspace_sub_, "");
     } else {
-        lv_obj_set_style_text_color(label_airspace_status_, COLOR_SUCCESS, 0);
-        lv_label_set_text(label_airspace_status_, LV_SYMBOL_BULLET " AIRSPACE CLEAR");
-        lv_label_set_text(label_airspace_sub_, "No aircraft within 25nm");
+        if (!lv_color_eq(home_airspace_color_, COLOR_SUCCESS)) {
+            lv_obj_set_style_text_color(label_airspace_status_, COLOR_SUCCESS, 0);
+            home_airspace_color_ = COLOR_SUCCESS;
+        }
+        if (strcmp(lv_label_get_text(label_airspace_status_), LV_SYMBOL_BULLET " AIRSPACE CLEAR") != 0)
+            lv_label_set_text(label_airspace_status_, LV_SYMBOL_BULLET " AIRSPACE CLEAR");
+        if (strcmp(lv_label_get_text(label_airspace_sub_), "No aircraft within 25nm") != 0)
+            lv_label_set_text(label_airspace_sub_, "No aircraft within 25nm");
     }
 }
 
@@ -1243,14 +1286,26 @@ void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
     // Status bar — reflects WiFi / data state
     if (label_radar_status_left_ && label_radar_status_live_) {
         if (!wifiConnected_) {
-            lv_obj_set_style_text_color(label_radar_status_left_, COLOR_DESCENT, 0);
+            if (!lv_color_eq(radar_status_left_color_, COLOR_DESCENT)) {
+                lv_obj_set_style_text_color(label_radar_status_left_, COLOR_DESCENT, 0);
+                radar_status_left_color_ = COLOR_DESCENT;
+            }
             setLbl(label_radar_status_left_, "NO SIGNAL");
-            lv_obj_set_style_text_color(label_radar_status_live_, COLOR_TEXT_DIM, 0);
+            if (!lv_color_eq(radar_status_live_color_, COLOR_TEXT_DIM)) {
+                lv_obj_set_style_text_color(label_radar_status_live_, COLOR_TEXT_DIM, 0);
+                radar_status_live_color_ = COLOR_TEXT_DIM;
+            }
             setLbl(label_radar_status_live_, LV_SYMBOL_BULLET " OFFLINE");
         } else {
-            lv_obj_set_style_text_color(label_radar_status_left_, COLOR_TEXT_DIM, 0);
+            if (!lv_color_eq(radar_status_left_color_, COLOR_TEXT_DIM)) {
+                lv_obj_set_style_text_color(label_radar_status_left_, COLOR_TEXT_DIM, 0);
+                radar_status_left_color_ = COLOR_TEXT_DIM;
+            }
             setLbl(label_radar_status_left_, "OPENSKY OK");
-            lv_obj_set_style_text_color(label_radar_status_live_, COLOR_SUCCESS, 0);
+            if (!lv_color_eq(radar_status_live_color_, COLOR_SUCCESS)) {
+                lv_obj_set_style_text_color(label_radar_status_live_, COLOR_SUCCESS, 0);
+                radar_status_live_color_ = COLOR_SUCCESS;
+            }
             setLbl(label_radar_status_live_, LV_SYMBOL_BULLET " LIVE");
         }
     }
@@ -1291,23 +1346,27 @@ void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
                 } else if (blip.targetDotX != nx || blip.targetDotY != ny) {
                     // Aircraft moved — animate from current (possibly mid-animation) position.
                     dotMoved = true;
-                    int32_t fromX = lv_obj_get_x(blip.dot);
-                    int32_t fromY = lv_obj_get_y(blip.dot);
                     blip.targetDotX = nx;
                     blip.targetDotY = ny;
-                    lv_anim_del(blip.dot, blip_anim_x);
-                    lv_anim_del(blip.dot, blip_anim_y);
-                    lv_anim_t da;
-                    lv_anim_init(&da);
-                    lv_anim_set_var(&da, blip.dot);
-                    lv_anim_set_duration(&da, 2000);
-                    lv_anim_set_path_cb(&da, lv_anim_path_ease_in_out);
-                    lv_anim_set_exec_cb(&da, blip_anim_x);
-                    lv_anim_set_values(&da, fromX, nx);
-                    lv_anim_start(&da);
-                    lv_anim_set_exec_cb(&da, blip_anim_y);
-                    lv_anim_set_values(&da, fromY, ny);
-                    lv_anim_start(&da);
+                    if (!Config::ENABLE_RADAR_ANIMATION || Config::RADAR_ANIMATION_MS == 0) {
+                        lv_obj_set_pos(blip.dot, nx, ny);
+                    } else {
+                        int32_t fromX = lv_obj_get_x(blip.dot);
+                        int32_t fromY = lv_obj_get_y(blip.dot);
+                        lv_anim_del(blip.dot, blip_anim_x);
+                        lv_anim_del(blip.dot, blip_anim_y);
+                        lv_anim_t da;
+                        lv_anim_init(&da);
+                        lv_anim_set_var(&da, blip.dot);
+                        lv_anim_set_duration(&da, Config::RADAR_ANIMATION_MS);
+                        lv_anim_set_path_cb(&da, lv_anim_path_ease_in_out);
+                        lv_anim_set_exec_cb(&da, blip_anim_x);
+                        lv_anim_set_values(&da, fromX, nx);
+                        lv_anim_start(&da);
+                        lv_anim_set_exec_cb(&da, blip_anim_y);
+                        lv_anim_set_values(&da, fromY, ny);
+                        lv_anim_start(&da);
+                    }
                 }
             }
             // lv_obj_set_style_* always marks dirty even when the value is identical —
@@ -1344,21 +1403,25 @@ void LVGLDisplayManager::update_radar_screen(const Aircraft* aircraft,
                 if (firstPlacement) {
                     lv_obj_set_pos(blip.label, lx, ly);
                 } else if (dotMoved) {
-                    int32_t fromLX = lv_obj_get_x(blip.label);
-                    int32_t fromLY = lv_obj_get_y(blip.label);
-                    lv_anim_del(blip.label, blip_anim_x);
-                    lv_anim_del(blip.label, blip_anim_y);
-                    lv_anim_t la;
-                    lv_anim_init(&la);
-                    lv_anim_set_var(&la, blip.label);
-                    lv_anim_set_duration(&la, 2000);
-                    lv_anim_set_path_cb(&la, lv_anim_path_ease_in_out);
-                    lv_anim_set_exec_cb(&la, blip_anim_x);
-                    lv_anim_set_values(&la, fromLX, lx);
-                    lv_anim_start(&la);
-                    lv_anim_set_exec_cb(&la, blip_anim_y);
-                    lv_anim_set_values(&la, fromLY, ly);
-                    lv_anim_start(&la);
+                    if (!Config::ENABLE_RADAR_ANIMATION || Config::RADAR_ANIMATION_MS == 0) {
+                        lv_obj_set_pos(blip.label, lx, ly);
+                    } else {
+                        int32_t fromLX = lv_obj_get_x(blip.label);
+                        int32_t fromLY = lv_obj_get_y(blip.label);
+                        lv_anim_del(blip.label, blip_anim_x);
+                        lv_anim_del(blip.label, blip_anim_y);
+                        lv_anim_t la;
+                        lv_anim_init(&la);
+                        lv_anim_set_var(&la, blip.label);
+                        lv_anim_set_duration(&la, Config::RADAR_ANIMATION_MS);
+                        lv_anim_set_path_cb(&la, lv_anim_path_ease_in_out);
+                        lv_anim_set_exec_cb(&la, blip_anim_x);
+                        lv_anim_set_values(&la, fromLX, lx);
+                        lv_anim_start(&la);
+                        lv_anim_set_exec_cb(&la, blip_anim_y);
+                        lv_anim_set_values(&la, fromLY, ly);
+                        lv_anim_start(&la);
+                    }
                 }
             }
             lv_obj_remove_flag(blip.label, LV_OBJ_FLAG_HIDDEN);

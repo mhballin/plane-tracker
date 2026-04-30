@@ -136,6 +136,11 @@ private:
     bool          userDismissed_;
     bool          userRequestedRadar_;
     bool          wifiConnected_ = false;  // set true only after WiFi connects via setWifiConnected()
+    lv_color_t    home_status_left_color_ = {};
+    lv_color_t    home_status_live_color_ = {};
+    lv_color_t    home_airspace_color_    = {};
+    lv_color_t    radar_status_left_color_ = {};
+    lv_color_t    radar_status_live_color_ = {};
 
     // --- IDF RGB panel (double-buffered, VSYNC-synced) ---
     esp_lcd_panel_handle_t panel_handle_   = nullptr;
@@ -147,12 +152,17 @@ private:
     // so LVGL's buffer-swap tracking stays in phase with the hardware vsync.
     volatile bool          flush_pending_         = false;
     volatile bool          freeze_rendering_      = false;
+    volatile bool          freeze_guard_active_   = false;
     uint32_t               freeze_start_ms_       = 0;
     volatile uint32_t      freeze_draw_leaked_    = 0;
     volatile uint32_t      vsync_timeouts_        = 0;
     // Frame timing diagnostics
     volatile uint32_t      last_bitmap_ms_        = 0;  // millis() of the last draw_bitmap call
     volatile bool          log_next_bitmap_       = false;  // set on unfreeze, log first frame after
+    volatile uint32_t      lv_timer_last_ms_      = 0;
+    volatile uint32_t      lv_timer_max_ms_       = 0;
+    volatile uint32_t      lv_skip_cycles_        = 0;
+    uint32_t               diag_last_ms_          = 0;
     static bool IRAM_ATTR on_vsync_event(esp_lcd_panel_handle_t panel,
                                const esp_lcd_rgb_panel_event_data_t* edata,
                                void* user_ctx);

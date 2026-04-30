@@ -11,7 +11,10 @@ public:
 
     Scheduler();
 
-    int8_t addTask(uint32_t intervalMs, bool runImmediately = false);
+    // intervalMs: how often to run
+    // runImmediately: if true, task is due on first call; if false, waits one interval
+    // initialDelayMs: optional offset before first run (e.g., 5000 = first run after 5s)
+    int8_t addTask(uint32_t intervalMs, bool runImmediately = false, uint32_t initialDelayMs = 0);
     bool due(int8_t taskId, uint32_t nowMs) const;
     void markRun(int8_t taskId, uint32_t nowMs);
     void reset();
